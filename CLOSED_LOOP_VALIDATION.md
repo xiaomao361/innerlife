@@ -81,7 +81,7 @@ session-start
 
 ## 宿主接入验证
 
-- Claude Code → Clara：真实调用 `session_start` 和 `session_end` 通过。
-- Hermes → Lara：真实调用 `session_start` 和 `session_end` 通过。
+- Claude Code 集成：真实调用 `session_start` 和 `session_end` 通过。
+- Hermes 集成：真实调用 `session_start` 和 `session_end` 通过。
 - 两次接入测试对话都被正确判定为无余韵，没有制造内部变化。
-- 两个宿主使用同一个 InnerLife 系统，但按 Agent 隔离状态。
+- 多个宿主使用同一个 InnerLife 系统，但按 Agent 隔离状态。

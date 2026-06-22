@@ -11,14 +11,14 @@
 
 ## 真实闭环
 
-使用线上 DeepSeek 和临时数据库运行，没有写入 Clara、Lara 的正式状态。
+使用线上 DeepSeek 和临时数据库运行，没有写入正式 agent 状态。
 
-### Clara
+### Agent A（订阅哲学与 AI 来源）
 
 1. 没有用户输入。
-2. Clara 根据“主体连续性”兴趣，选择了 Stanford Encyclopedia of Philosophy 的 Personal Identity 条目。
+2. Agent A 根据”主体连续性”兴趣，选择了 Stanford Encyclopedia of Philosophy 的 Personal Identity 条目。
 3. 系统实际读取网页并保存来源、时间、内容指纹和文本证据。
-4. Clara 形成了关于心理连续性、物理连续性和人格同一性的三个新问题。
+4. Agent A 形成了关于心理连续性、物理连续性和人格同一性的三个新问题。
 5. InnerLife 消化成功，更新了当前关注和未完成问题。
 6. 下一次 briefing 能读取到这段自主经历和新问题。
 
@@ -28,9 +28,9 @@ https://plato.stanford.edu/entries/identity-personal/
 
 ### 保持沉默与失败边界
 
-- Lara 判断当时的候选与自己的关注关联较弱，选择不读，没有制造经历。
+- Agent B（订阅不同来源）判断当时的候选与自己的关注关联较弱，选择不读，没有制造经历。
 - Aeon 页面返回访问限流时，系统记录读取失败，没有根据标题虚构经历。
-- Clara 读完一篇 Hume 资料后判断没有足够新意，没有强行形成内部变化。
+- Agent A 读完一篇 Hume 资料后判断没有足够新意，没有强行形成内部变化。
 
 ## 结论
 
