@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claracore-innerlife"
+version = "2.0.0"
+description = "Persistent inner life and grounded autonomous experience for ClaraCore agents"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3"]
+
+[project.scripts]
+innerlife = "innerlife.cli:main"
+innerlife-daemon = "innerlife.daemon:main"
+
+[tool.setuptools.packages.find]
+include = ["innerlife*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,12 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "帮我确认一下管理页面地址。"
+    },
+    {
+      "role": "assistant",
+      "content": "管理页面是 http://127.0.0.1:8012。"
+    }
+  ]
+}

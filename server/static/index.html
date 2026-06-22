@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InnerLife</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #111310; color: #e7e9e3; }
+    header { padding: 28px 32px 18px; border-bottom: 1px solid #2a2e27; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    .muted { color: #9ca294; }
+    main { padding: 24px 32px 48px; max-width: 1100px; margin: auto; }
+    .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
+    select, button { background: #20251e; color: #eef0ea; border: 1px solid #3a4236; border-radius: 8px; padding: 9px 12px; }
+    button { cursor: pointer; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    section { background: #191d17; border: 1px solid #2b3128; border-radius: 12px; padding: 18px; }
+    h2 { font-size: 15px; margin: 0 0 14px; color: #bac7ad; }
+    ul { padding-left: 20px; margin: 0; }
+    li { margin: 8px 0; line-height: 1.45; }
+    .event { padding: 12px 0; border-top: 1px solid #292f26; }
+    .event:first-child { border-top: 0; }
+    .tag { display: inline-block; font-size: 12px; padding: 2px 7px; border-radius: 99px; background: #30382c; margin-right: 6px; }
+    .wide { grid-column: 1 / -1; }
+    .empty { color: #737a6d; }
+    .error { color: #ef9b8d; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>InnerLife</h1>
+    <div class="muted" id="service">正在读取状态…</div>
+  </header>
+  <main>
+    <div class="toolbar">
+      <select id="agent"></select>
+      <button id="refresh">刷新</button>
+      <button id="digest">立即消化</button>
+    </div>
+    <div class="grid">
+      <section><h2>当前关注</h2><ul id="interests"></ul></section>
+      <section><h2>未完成问题</h2><ul id="loops"></ul></section>
+      <section><h2>待分享念头</h2><div id="shares"></div></section>
+      <section class="wide"><h2>最近内部变化</h2><div id="events"></div></section>
+    </div>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    async function get(url, options) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || response.statusText);
+      return data;
+    }
+    function list(target, items, render = x => x) {
+      target.innerHTML = items.length ? items.map(x => `<li>${render(x)}</li>`).join("") : '<li class="empty">暂无</li>';
+    }
+    async function loadAgents() {
+      const data = await get("/api/status");
+      const heartbeat = data.heartbeat;
+      const model = data.model || {ready: true, message: ""};
+      $("service").textContent = heartbeat
+        ? `后台最近心跳：${new Date(heartbeat.time).toLocaleString()} · ${heartbeat.backend} · ${model.message}`
+        : `后台尚未报告心跳 · ${model.message}`;
+      $("digest").disabled = !model.ready;
+      $("digest").title = model.ready ? "" : model.message;
+      $("agent").innerHTML = data.agents.map(a => `<option value="${a.agent_id}">${a.display_name} · 待处理 ${a.pending_count}</option>`).join("");
+    }
+    async function loadBriefing() {
+      const agent = $("agent").value;
+      if (!agent) return;
+      try {
+        const b = await get(`/api/agents/${agent}/briefing`);
+        list($("interests"), b.current_interests);
+        list($("loops"), b.open_loops, x => x.content);
+        $("shares").innerHTML = b.pending_shares.length ? b.pending_shares.map(s =>
+          `<div class="event"><div>${s.content}</div><div class="muted">${s.share_mode}</div>
+          <button onclick="markShare('${s.id}','used')">已使用</button>
+          <button onclick="markShare('${s.id}','deferred')">延后</button></div>`
+        ).join("") : '<div class="empty">暂无</div>';
+        $("events").innerHTML = b.recent_internal_events.length ? b.recent_internal_events.map(e =>
+          `<div class="event"><span class="tag">${e.event_type}</span>${e.content}
+          <div class="muted">来源：${e.source_refs.join(", ")}</div></div>`
+        ).join("") : '<div class="empty">暂无</div>';
+      } catch (e) { $("events").innerHTML = `<div class="error">${e.message}</div>`; }
+    }
+    async function markShare(id, status) {
+      await get(`/api/agents/${$("agent").value}/shares/${id}`, {
+        method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({status})
+      }); await loadBriefing();
+    }
+    $("refresh").onclick = async () => { await loadAgents(); await loadBriefing(); };
+    $("agent").onchange = loadBriefing;
+    $("digest").onclick = async () => {
+      $("digest").disabled = true;
+      try {
+        await get(`/api/agents/${$("agent").value}/digest`, {
+          method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({mode:"light"})
+        });
+        await loadBriefing();
+      } catch (e) { alert(e.message); }
+      finally { $("digest").disabled = false; }
+    };
+    (async () => { await loadAgents(); await loadBriefing(); })();
+  </script>
+</body>
+</html>
