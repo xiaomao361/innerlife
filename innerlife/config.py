@@ -6,7 +6,8 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_ROOT = Path.home() / ".claracore" / "innerlife"
+LEGACY_ROOT = Path.home() / ".claracore" / "innerlife"
+DEFAULT_ROOT = LEGACY_ROOT if LEGACY_ROOT.exists() else Path.home() / ".innerlife"
 
 
 def _load_env_file(root: Path) -> None:
@@ -49,14 +50,18 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         root = Path(os.environ.get("INNERLIFE_ROOT", str(DEFAULT_ROOT))).expanduser()
-        secret_file = Path(
-            os.environ.get(
-                "INNERLIFE_SECRET_ENV_FILE", str(Path.home() / ".hermes" / ".env")
-            )
-        ).expanduser()
-        _load_named_env_file(secret_file)
         _load_env_file(root)
-        root = Path(os.environ.get("INNERLIFE_ROOT", str(root))).expanduser()
+        configured_root = Path(
+            os.environ.get("INNERLIFE_ROOT", str(root))
+        ).expanduser()
+        if configured_root != root:
+            root = configured_root
+            _load_env_file(root)
+        else:
+            root = configured_root
+        secret_file_value = os.environ.get("INNERLIFE_SECRET_ENV_FILE", "").strip()
+        if secret_file_value:
+            _load_named_env_file(Path(secret_file_value).expanduser())
         return cls(
             root=root,
             db_path=Path(
@@ -82,13 +87,13 @@ class Settings:
             memoria_db_path=Path(
                 os.environ.get(
                     "INNERLIFE_MEMORIA_DB",
-                    str(Path.home() / ".claracore" / "memoria" / "memoria.db"),
+                    str(Path.home() / ".memoria" / "memoria.db"),
                 )
             ).expanduser(),
             continuity_db_path=Path(
                 os.environ.get(
                     "INNERLIFE_CONTINUITY_DB",
-                    str(Path.home() / ".claracore" / "continuity" / "continuity.db"),
+                    str(Path.home() / ".continuity" / "continuity.db"),
                 )
             ).expanduser(),
             memoria_sync_agents=tuple(

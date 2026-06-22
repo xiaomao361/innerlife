@@ -1,29 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import json
 import signal
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from threading import Event
 from typing import Any
 
-from .config import PROJECT_ROOT, Settings
+from .config import Settings
 from .autonomous import AutonomousExperienceEngine
 from .digest import DigestEngine, make_backend
 from .integrations import sync_continuity, sync_memoria
 from .storage import Storage, utc_now
-
-
-def ensure_default_agents(storage: Storage) -> None:
-    for agent_id in ("clara", "lara"):
-        profile = json.loads(
-            (PROJECT_ROOT / "profiles" / f"{agent_id}.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        storage.create_agent(profile)
 
 
 def _seconds_since(timestamp: str | None) -> float:
@@ -49,7 +37,6 @@ class InnerLifeDaemon:
         self.settings = settings
         self.storage = Storage(settings.db_path)
         self.storage.init_db()
-        ensure_default_agents(self.storage)
         self.backend = make_backend(settings)
         self.engine = DigestEngine(self.storage, self.backend)
         self.autonomous = AutonomousExperienceEngine(

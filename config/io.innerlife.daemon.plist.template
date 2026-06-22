@@ -2,13 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.claracore.innerlife.daemon</string>
+  <key>Label</key><string>io.innerlife.daemon</string>
   <key>ProgramArguments</key>
   <array><string>__PROJECT__/scripts/run_daemon.sh</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>INNERLIFE_ROOT</key><string>__ROOT__</string>
+    <key>INNERLIFE_PYTHON</key><string>__PYTHON__</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>15</integer>
-  <key>StandardOutPath</key><string>__HOME__/.claracore/innerlife/logs/daemon.log</string>
-  <key>StandardErrorPath</key><string>__HOME__/.claracore/innerlife/logs/daemon.error.log</string>
+  <key>StandardOutPath</key><string>__ROOT__/logs/daemon.log</string>
+  <key>StandardErrorPath</key><string>__ROOT__/logs/daemon.error.log</string>
 </dict>
 </plist>

@@ -1,6 +1,8 @@
-# InnerLife v2.0
+# InnerLife v2.1
 
 InnerLife 是 AI agent 的内部生活系统。
+
+[MIT License](LICENSE)
 
 它让每个 agent 在不同对话窗口之间保留一份持续的内部状态：当前关注、未完成问题、形成的新理解和待分享念头。
 
@@ -19,7 +21,7 @@ InnerLife：Agent 自己正在关注、怀疑和改变什么
 - 每次变化都有来源，允许没有变化。
 - 后台长期运行，自动处理新材料。
 - 失败重试和逐步退避，不会持续轰炸模型。
-- MCP：Claude Code、Hermes 等宿主可直接读写。
+- MCP：支持 MCP 的宿主可直接读写。
 - HTTP API 和中文管理页面。
 - 显式同步 Memoria 事实和 Continuity 当前位置。
 - 本地模型、OpenAI 兼容服务、Anthropic 兼容服务可替换。
@@ -33,28 +35,42 @@ InnerLife：Agent 自己正在关注、怀疑和改变什么
 数据默认保存在：
 
 ```text
-~/.claracore/innerlife/innerlife.db
+~/.innerlife/innerlife.db
 ```
 
 模型不是 Agent 本身。换模型、换机器或重启服务，不会改变已经保存的内部历史。
 
 ## 安装
 
+需要 Python 3.10 或更高版本。不要使用 macOS 自带的旧版 Python。
+
 ```bash
 cd /path/to/innerlife
+python -m pip install --upgrade pip setuptools
 pip install -e '.[dev]'
+cp profiles/example-agent.json profiles/my-agent.json
+```
+
+编辑 `profiles/my-agent.json`，至少修改 `agent_id`、`display_name`、
+`identity`、`boundaries.can_access_users` 和 `autonomous_sources`。
+
+然后初始化：
+
+```bash
+python -m innerlife.cli init --profile profiles/my-agent.json --json
 python -m innerlife.cli doctor --json
 ```
 
-`doctor` 会初始化数据库和示例 agent profile。
+程序不会自动创建任何人格。仓库中的 profile 只是中性示例。
 
 ## 配置模型
 
 复制并填写私有配置文件：
 
 ```bash
-cp config/innerlife.env.example ~/.claracore/innerlife/innerlife.env
-chmod 600 ~/.claracore/innerlife/innerlife.env
+mkdir -p ~/.innerlife
+cp config/innerlife.env.example ~/.innerlife/innerlife.env
+chmod 600 ~/.innerlife/innerlife.env
 ```
 
 ### 本地 Ollama / LM Studio
@@ -95,10 +111,10 @@ INNERLIFE_DEEP_MODEL=deepseek-v4-pro
 
 # 启动
 launchctl bootstrap gui/$(id -u) \
-  ~/Library/LaunchAgents/com.claracore.innerlife.daemon.plist
+  ~/Library/LaunchAgents/io.innerlife.daemon.plist
 
 launchctl bootstrap gui/$(id -u) \
-  ~/Library/LaunchAgents/com.claracore.innerlife.web.plist
+  ~/Library/LaunchAgents/io.innerlife.web.plist
 ```
 
 管理页面：
@@ -111,7 +127,7 @@ http://127.0.0.1:8012
 
 ```bash
 python -m innerlife.cli doctor --json
-tail -f ~/.claracore/innerlife/logs/daemon.log
+tail -f ~/.innerlife/logs/daemon.log
 ```
 
 停止和移除：
@@ -173,8 +189,8 @@ GET  /api/agents/{agent_id}/sessions
 {
   "mcpServers": {
     "innerlife-my-agent": {
-      "command": "/path/to/python",
-      "args": ["/path/to/innerlife/server/mcp.py"],
+      "command": "/path/to/innerlife/scripts/run_mcp.sh",
+      "args": [],
       "env": {
         "INNERLIFE_AGENT_ID": "my-agent"
       }
@@ -182,6 +198,9 @@ GET  /api/agents/{agent_id}/sessions
   }
 }
 ```
+
+调用 `innerlife_session_start` 时，宿主必须明确传入自己的 `user_id`；
+InnerLife 不预设用户身份。
 
 MCP 工具列表：
 
@@ -262,7 +281,7 @@ python -m innerlife.cli experiences --agent my-agent --json
 
 # 备份
 python -m innerlife.cli backup \
-  --output ~/.claracore/innerlife/backups/innerlife-$(date +%F).db
+  --output ~/.innerlife/backups/innerlife-$(date +%F).db
 ```
 
 ## 模型分层
@@ -310,3 +329,17 @@ v2 已经可以长期运行，但仍然坚持克制：
 - 不允许不同 Agent 读取彼此私有状态。
 - 不保证本地小模型能处理所有复杂矛盾；复杂情况应升级到强模型。
 - 管理页面是状态管理入口，不是最终视觉产品。
+
+## 从旧版本升级
+
+v2.1 不再自动创建内置人格，也不再包含私人 profile。
+
+旧数据库中的 Agent 会原样保留，不需要重新创建。为保持兼容，如果
+`~/.claracore/innerlife` 已经存在，程序仍会继续使用它；全新安装默认使用
+`~/.innerlife`。
+
+如果旧配置依赖另一个私有文件提供密钥，请显式设置：
+
+```bash
+INNERLIFE_SECRET_ENV_FILE=/path/to/private.env
+```

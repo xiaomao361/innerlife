@@ -1,15 +1,16 @@
 #!/bin/zsh
 set -eu
 
-ROOT="${INNERLIFE_ROOT:-$HOME/.claracore/innerlife}"
-HERMES_ENV="$HOME/.hermes/.env"
-INNERLIFE_ENV="$ROOT/innerlife.env"
-
-if [[ -f "$HERMES_ENV" ]]; then
-  set -a
-  source "$HERMES_ENV"
-  set +a
+if [[ -n "${INNERLIFE_ROOT:-}" ]]; then
+  ROOT="$INNERLIFE_ROOT"
+elif [[ -d "$HOME/.claracore/innerlife" ]]; then
+  ROOT="$HOME/.claracore/innerlife"
+else
+  ROOT="$HOME/.innerlife"
 fi
+INNERLIFE_ENV="$ROOT/innerlife.env"
+SCRIPT_DIR="${0:A:h}"
+PROJECT="${SCRIPT_DIR:h}"
 
 if [[ -f "$INNERLIFE_ENV" ]]; then
   set -a
@@ -17,5 +18,12 @@ if [[ -f "$INNERLIFE_ENV" ]]; then
   set +a
 fi
 
-exec /Users/zhouwei/miniconda3/envs/zhouwei/bin/python \
-  /Users/zhouwei/Documents/ClaraCore/apps/innerlife/server/mcp.py
+PYTHON="${INNERLIFE_PYTHON:-}"
+if [[ -z "$PYTHON" && -x "$PROJECT/.venv/bin/python" ]]; then
+  PYTHON="$PROJECT/.venv/bin/python"
+fi
+if [[ -z "$PYTHON" ]]; then
+  PYTHON="$(command -v python3)"
+fi
+cd "$PROJECT"
+exec "$PYTHON" "$PROJECT/server/mcp.py"

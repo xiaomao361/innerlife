@@ -26,11 +26,11 @@ def test_memoria_sync_is_idempotent(storage, tmp_path):
             )
             """
         )
-    first = sync_memoria(storage, path, "clara")
-    second = sync_memoria(storage, path, "clara")
+    first = sync_memoria(storage, path, "agent-a")
+    second = sync_memoria(storage, path, "agent-a")
     assert first["imported"] == 1
     assert second["imported"] == 0
-    assert storage.pending_events("clara")[0]["source_type"] == "memoria_fact"
+    assert storage.pending_events("agent-a")[0]["source_type"] == "memoria_fact"
 
 
 def test_continuity_sync_preserves_position_boundary(storage, tmp_path):
@@ -54,14 +54,14 @@ def test_continuity_sync_preserves_position_boundary(storage, tmp_path):
             INSERT INTO session_threads VALUES (
               't1', 1, 'InnerLife', 'active', '2026-06-22T00:00:00+00:00',
               '正在从核心验证升级到可用系统', '接入 MCP', '边界保持清楚',
-              'clara', '[]', '这是当前位置', 'active', 0,
+              'agent-a', '[]', '这是当前位置', 'active', 0,
               '共同建设可用系统', '直接但谨慎', '内外边界明确',
               '仍需验证长期运行', '不要把位置当事实', '不要假装已经成熟'
             )
             """
         )
-    result = sync_continuity(storage, path, "clara")
+    result = sync_continuity(storage, path, "agent-a")
     assert result["imported"] == 1
-    event = storage.pending_events("clara")[0]
+    event = storage.pending_events("agent-a")[0]
     assert event["source_type"] == "continuity_position"
     assert event["content"]["current_interpretation"] == "这是当前位置"

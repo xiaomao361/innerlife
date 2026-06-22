@@ -53,6 +53,14 @@ class FakeBackend:
             return self.responder(payload)
         if self.response is not None:
             return json.loads(json.dumps(self.response, ensure_ascii=False))
+        if "conversation" in payload:
+            return {
+                "has_afterthought": False,
+                "reason": "The fake backend does not infer an afterthought.",
+                "conversation_summary": "Fake-backend acceptance conversation.",
+                "agent_afterthought": "",
+                "open_loops": [],
+            }
         events = payload.get("pending_inbox_events", [])
         if not events:
             return {

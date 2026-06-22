@@ -9,7 +9,7 @@ from typing import Any
 from .config import Settings
 from .autonomous import AutonomousExperienceEngine
 from .digest import run_from_settings
-from .daemon import InnerLifeDaemon, ensure_default_agents
+from .daemon import InnerLifeDaemon
 from .integrations import sync_continuity, sync_memoria
 from .models import InnerLifeError, ValidationError
 from .scenarios import run_scenarios
@@ -53,6 +53,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_db = sub.add_parser("init-db")
     _add_json_flag(init_db)
+
+    init = sub.add_parser("init")
+    init.add_argument(
+        "--profile",
+        default=str(Path(__file__).resolve().parent.parent / "profiles" / "example-agent.json"),
+    )
+    _add_json_flag(init)
 
     create = sub.add_parser("create-agent")
     create.add_argument("--profile", required=True)
@@ -137,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     session_start = sub.add_parser("session-start")
     session_start.add_argument("--agent", required=True)
-    session_start.add_argument("--user", default="zhouwei")
+    session_start.add_argument("--user", required=True)
     session_start.add_argument("--host", required=True)
     session_start.add_argument("--external-session-id")
     _add_json_flag(session_start)
@@ -192,6 +199,13 @@ def execute(args: argparse.Namespace, settings: Settings) -> Any:
     storage.init_db()
     if args.command == "init-db":
         return storage.init_db()
+    if args.command == "init":
+        agent = storage.create_agent(_read_object(args.profile))
+        return {
+            "initialized": True,
+            "db_path": str(settings.db_path),
+            "agent": agent,
+        }
     if args.command == "create-agent":
         return storage.create_agent(_read_object(args.profile))
     if args.command == "submit-event":
@@ -253,7 +267,6 @@ def execute(args: argparse.Namespace, settings: Settings) -> Any:
         )
     if args.command == "doctor":
         storage.init_db()
-        ensure_default_agents(storage)
         status = system_status(storage, settings)
         status["configuration"] = {
             "root": str(settings.root),
@@ -267,6 +280,10 @@ def execute(args: argparse.Namespace, settings: Settings) -> Any:
         }
         readiness = model_readiness(settings)
         warnings = [] if readiness["ready"] else [readiness["message"]]
+        if not status["agents"]:
+            warnings.append(
+                "No agents configured. Run `innerlife init --profile profiles/example-agent.json`."
+            )
         status["warnings"] = warnings
         return status
     if args.command == "backup":

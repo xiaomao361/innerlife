@@ -105,11 +105,11 @@ def test_autonomous_experience_fetches_real_material_and_enters_digest(
     server = start_source_server()
     try:
         storage.add_source(
-            "clara",
+            "agent-a",
             "Local grounded source",
             f"http://127.0.0.1:{server.server_port}/feed.xml",
         )
-        for source in storage.list_sources("clara"):
+        for source in storage.list_sources("agent-a"):
             if source["name"] != "Local grounded source":
                 with storage.transaction() as conn:
                     conn.execute(
@@ -121,7 +121,7 @@ def test_autonomous_experience_fetches_real_material_and_enters_digest(
             settings_for(tmp_path, monkeypatch),
             FakeBackend(responder=successful_responder),
         )
-        result = engine.explore("clara")
+        result = engine.explore("agent-a")
     finally:
         server.shutdown()
         server.server_close()
@@ -129,21 +129,21 @@ def test_autonomous_experience_fetches_real_material_and_enters_digest(
     assert result["experience"]["url"].endswith("/article")
     assert result["experience"]["evidence"]["text_chars"] >= 200
     assert result["digest"]["changed"] is True
-    assert storage.pending_events("clara") == []
-    assert len(storage.list_autonomous_experiences("clara")) == 1
-    assert storage.list_exploration_runs("clara")[0]["status"] == "experienced"
-    assert storage.get_agent("clara")["state"]["recent_focus"] == "有证据的自主经历"
+    assert storage.pending_events("agent-a") == []
+    assert len(storage.list_autonomous_experiences("agent-a")) == 1
+    assert storage.list_exploration_runs("agent-a")[0]["status"] == "experienced"
+    assert storage.get_agent("agent-a")["state"]["recent_focus"] == "有证据的自主经历"
 
 
 def test_autonomous_experience_can_choose_to_skip(storage, tmp_path, monkeypatch):
     server = start_source_server()
     try:
         storage.add_source(
-            "lara",
+            "agent-b",
             "Local grounded source",
             f"http://127.0.0.1:{server.server_port}/feed.xml",
         )
-        for source in storage.list_sources("lara"):
+        for source in storage.list_sources("agent-b"):
             if source["name"] != "Local grounded source":
                 with storage.transaction() as conn:
                     conn.execute(
@@ -159,14 +159,14 @@ def test_autonomous_experience_can_choose_to_skip(storage, tmp_path, monkeypatch
         )
         result = AutonomousExperienceEngine(
             storage, settings_for(tmp_path, monkeypatch), backend
-        ).explore("lara")
+        ).explore("agent-b")
     finally:
         server.shutdown()
         server.server_close()
 
     assert result["selected"] is False
-    assert storage.list_autonomous_experiences("lara") == []
-    assert storage.list_exploration_runs("lara")[0]["status"] == "skipped"
+    assert storage.list_autonomous_experiences("agent-b") == []
+    assert storage.list_exploration_runs("agent-b")[0]["status"] == "skipped"
 
 
 def test_duplicate_material_does_not_create_second_experience(
@@ -175,11 +175,11 @@ def test_duplicate_material_does_not_create_second_experience(
     server = start_source_server()
     try:
         storage.add_source(
-            "clara",
+            "agent-a",
             "Local grounded source",
             f"http://127.0.0.1:{server.server_port}/feed.xml",
         )
-        for source in storage.list_sources("clara"):
+        for source in storage.list_sources("agent-a"):
             if source["name"] != "Local grounded source":
                 with storage.transaction() as conn:
                     conn.execute(
@@ -191,23 +191,26 @@ def test_duplicate_material_does_not_create_second_experience(
             settings_for(tmp_path, monkeypatch),
             FakeBackend(responder=successful_responder),
         )
-        engine.explore("clara")
-        result = engine.explore("clara")
+        engine.explore("agent-a")
+        result = engine.explore("agent-a")
     finally:
         server.shutdown()
         server.server_close()
 
     assert result["selected"] is False
     assert "已经" in result["reason"]
-    assert len(storage.list_autonomous_experiences("clara")) == 1
-    assert storage.list_exploration_runs("clara")[0]["status"] == "duplicate"
+    assert len(storage.list_autonomous_experiences("agent-a")) == 1
+    assert storage.list_exploration_runs("agent-a")[0]["status"] == "duplicate"
 
 
 def test_sources_and_experiences_remain_agent_isolated(storage):
-    clara_urls = {source["url"] for source in storage.list_sources("clara")}
-    lara_urls = {source["url"] for source in storage.list_sources("lara")}
+    storage.add_source(
+        "agent-a",
+        "Agent A only",
+        "https://example.com/agent-a.xml",
+    )
+    agent_a_urls = {source["url"] for source in storage.list_sources("agent-a")}
+    agent_b_urls = {source["url"] for source in storage.list_sources("agent-b")}
 
-    assert "https://plato.stanford.edu/rss/sep.xml" in clara_urls
-    assert "https://plato.stanford.edu/rss/sep.xml" not in lara_urls
-    assert "https://www.quantamagazine.org/feed/" in lara_urls
-    assert "https://www.quantamagazine.org/feed/" not in clara_urls
+    assert "https://example.com/agent-a.xml" in agent_a_urls
+    assert "https://example.com/agent-a.xml" not in agent_b_urls

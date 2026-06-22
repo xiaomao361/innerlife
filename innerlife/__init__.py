@@ -1,3 +1,3 @@
-"""ClaraCore InnerLife Phase 0."""
+"""Persistent inner life for long-running AI agents."""
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"

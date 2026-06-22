@@ -50,9 +50,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix="innerlife-mcp-") as tmp:
         env = os.environ.copy()
         env["INNERLIFE_DB_PATH"] = str(Path(tmp) / "innerlife.db")
-        env["INNERLIFE_AGENT_ID"] = "clara"
+        env["INNERLIFE_AGENT_ID"] = "example-agent"
         subprocess.run(
-            [sys.executable, "-m", "innerlife.cli", "doctor", "--json"],
+            [sys.executable, "-m", "innerlife.cli", "init", "--json"],
             env=env,
             cwd=ROOT,
             check=True,
@@ -77,6 +77,7 @@ def main():
                 {
                     "name": "innerlife_session_start",
                     "arguments": {
+                        "user_id": "example-user",
                         "host": "mcp-smoke",
                         "external_session_id": "mcp-session-1",
                     },
@@ -103,7 +104,7 @@ def main():
                 {"name": "innerlife_briefing", "arguments": {}},
             )
         )
-        assert briefing["agent_id"] == "clara"
+        assert briefing["agent_id"] == "example-agent"
         status = content(
             client.request("tools/call", {"name": "innerlife_status", "arguments": {}})
         )

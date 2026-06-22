@@ -14,20 +14,18 @@ from pydantic import BaseModel
 
 from innerlife.config import Settings
 from innerlife.autonomous import AutonomousExperienceEngine
-from innerlife.daemon import ensure_default_agents
 from innerlife.digest import run_from_settings
 from innerlife.service import get_briefing, system_status
 from innerlife.session import SessionLifecycle
 from innerlife.storage import Storage
 
-app = FastAPI(title="InnerLife", version="2.0.0")
+app = FastAPI(title="InnerLife", version="2.1.0")
 STATIC_DIR = SERVER_DIR / "static"
 
 
 def store() -> Storage:
     storage = Storage(Settings.from_env().db_path)
     storage.init_db()
-    ensure_default_agents(storage)
     return storage
 
 
@@ -47,7 +45,7 @@ class ShareRequest(BaseModel):
 
 
 class SessionStartRequest(BaseModel):
-    user_id: str = "zhouwei"
+    user_id: str
     host: str
     external_session_id: str | None = None
 

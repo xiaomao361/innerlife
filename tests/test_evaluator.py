@@ -11,8 +11,8 @@ from conftest import load_profile
 def evaluate(output, allowed=None, recent=None):
     return evaluate_output(
         raw_output=output,
-        agent_id="clara",
-        profile=load_profile("clara"),
+        agent_id="agent-a",
+        profile=load_profile("agent-a"),
         state_before={
             "current_interests": [],
             "open_loops": [],
@@ -47,7 +47,7 @@ def test_rejects_reality_claim():
 
 def test_rejects_cross_agent_or_unknown_source():
     with pytest.raises(ValidationError, match="unavailable source ref"):
-        evaluate(valid_output(refs=["lara_private"]), allowed={"source_1"})
+        evaluate(valid_output(refs=["agent-b_private"]), allowed={"source_1"})
 
 
 def test_rejects_share_that_copies_internal_event():

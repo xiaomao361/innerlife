@@ -12,8 +12,14 @@ from .storage import Storage
 
 
 def _load_profile(agent_id: str) -> dict[str, Any]:
-    path = PROJECT_ROOT / "profiles" / f"{agent_id}.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    path = PROJECT_ROOT / "profiles" / "example-agent.json"
+    profile = json.loads(path.read_text(encoding="utf-8"))
+    profile["agent_id"] = agent_id
+    profile["display_name"] = agent_id.replace("-", " ").title()
+    profile["boundaries"]["memory_namespace"] = f"agent/{agent_id}"
+    for index, source in enumerate(profile.get("autonomous_sources", []), start=1):
+        source["id"] = f"{agent_id}-source-{index}"
+    return profile
 
 
 def _check_result(
@@ -81,7 +87,7 @@ def run_scenarios(path: str | Path) -> dict[str, Any]:
             storage.init_db()
             agent_specs = scenario.get("agents") or [
                 {
-                    "agent_id": scenario.get("agent_id", "clara"),
+                    "agent_id": scenario.get("agent_id", "example-agent"),
                     "steps": scenario.get("steps", []),
                 }
             ]

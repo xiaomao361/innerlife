@@ -8,7 +8,7 @@ from innerlife.models import ValidationError
 
 
 def test_no_change_is_recorded_without_changing_revision(storage):
-    before = storage.get_agent("clara")
+    before = storage.get_agent("agent-a")
     result = DigestEngine(
         storage,
         FakeBackend(
@@ -20,19 +20,19 @@ def test_no_change_is_recorded_without_changing_revision(storage):
                 "pending_shares": [],
             }
         ),
-    ).run("clara")
+    ).run("agent-a")
 
-    after = storage.get_agent("clara")
+    after = storage.get_agent("agent-a")
     assert result.changed is False
     assert after["revision"] == before["revision"]
-    runs = storage.digest_runs("clara")
+    runs = storage.digest_runs("agent-a")
     assert runs[0]["changed"] is False
     assert runs[0]["status"] == "completed"
 
 
 def test_success_is_atomic_and_consumes_inputs(storage):
     storage.submit_event(
-        "clara",
+        "agent-a",
         "afterthought",
         "session-a",
         {"text": "怎样判断内部变化"},
@@ -58,23 +58,23 @@ def test_success_is_atomic_and_consumes_inputs(storage):
         },
         "pending_shares": [],
     }
-    result = DigestEngine(storage, FakeBackend(response=response)).run("clara")
+    result = DigestEngine(storage, FakeBackend(response=response)).run("agent-a")
 
     assert result.changed is True
-    assert storage.pending_events("clara") == []
-    assert len(storage.recent_internal_events("clara")) == 1
-    assert len(storage.get_agent("clara")["state"]["open_loops"]) == 1
+    assert storage.pending_events("agent-a") == []
+    assert len(storage.recent_internal_events("agent-a")) == 1
+    assert len(storage.get_agent("agent-a")["state"]["open_loops"]) == 1
 
 
 def test_invalid_output_does_not_consume_input_or_update_state(storage):
     storage.submit_event(
-        "clara",
+        "agent-a",
         "afterthought",
         "session-a",
         {"text": "测试失败路径"},
         event_id="source_fail",
     )
-    before = storage.get_agent("clara")
+    before = storage.get_agent("agent-a")
     response = {
         "changed": True,
         "reason": "无来源变化",
@@ -89,13 +89,13 @@ def test_invalid_output_does_not_consume_input_or_update_state(storage):
         "pending_shares": [],
     }
     with pytest.raises(ValidationError):
-        DigestEngine(storage, FakeBackend(response=response)).run("clara")
+        DigestEngine(storage, FakeBackend(response=response)).run("agent-a")
 
-    assert [event["id"] for event in storage.pending_events("clara")] == [
+    assert [event["id"] for event in storage.pending_events("agent-a")] == [
         "source_fail"
     ]
-    assert storage.get_agent("clara")["state"] == before["state"]
-    assert storage.digest_runs("clara")[0]["status"] == "failed"
+    assert storage.get_agent("agent-a")["state"] == before["state"]
+    assert storage.digest_runs("agent-a")[0]["status"] == "failed"
 
 
 def test_duplicate_change_is_downgraded_to_no_change(storage):
@@ -113,16 +113,16 @@ def test_duplicate_change_is_downgraded_to_no_change(storage):
         "pending_shares": [],
     }
     storage.submit_event(
-        "clara",
+        "agent-a",
         "afterthought",
         "session-a",
         {"text": "变化来源"},
         event_id="repeat_a",
     )
-    DigestEngine(storage, FakeBackend(response=first)).run("clara")
+    DigestEngine(storage, FakeBackend(response=first)).run("agent-a")
 
     storage.submit_event(
-        "clara",
+        "agent-a",
         "afterthought",
         "session-b",
         {"text": "还是变化来源"},
@@ -137,8 +137,8 @@ def test_duplicate_change_is_downgraded_to_no_change(storage):
             "source_refs": ["repeat_b"],
         }
     ]
-    result = DigestEngine(storage, FakeBackend(response=second)).run("clara")
+    result = DigestEngine(storage, FakeBackend(response=second)).run("agent-a")
 
     assert result.changed is False
-    assert len(storage.recent_internal_events("clara")) == 1
-    assert storage.pending_events("clara") == []
+    assert len(storage.recent_internal_events("agent-a")) == 1
+    assert storage.pending_events("agent-a") == []

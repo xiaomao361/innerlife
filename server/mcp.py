@@ -20,13 +20,12 @@ from mcp.types import TextContent, Tool
 
 from innerlife.config import Settings
 from innerlife.autonomous import AutonomousExperienceEngine
-from innerlife.daemon import ensure_default_agents
 from innerlife.digest import run_from_settings
 from innerlife.service import get_briefing, system_status
 from innerlife.session import SessionLifecycle
 from innerlife.storage import Storage
 
-server = Server("innerlife", version="2.0.0")
+server = Server("innerlife", version="2.1.0")
 
 
 def _agent(arguments: dict) -> str:
@@ -73,11 +72,11 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "agent_id": {"type": "string"},
-                "user_id": {"type": "string", "default": "zhouwei"},
+                "user_id": {"type": "string"},
                 "host": {"type": "string"},
                 "external_session_id": {"type": "string"},
             },
-            "required": ["host", "external_session_id"],
+            "required": ["user_id", "host", "external_session_id"],
         },
     ),
     Tool(
@@ -221,7 +220,6 @@ async def call_tool(name: str, arguments: dict):
     settings = Settings.from_env()
     storage = Storage(settings.db_path)
     storage.init_db()
-    ensure_default_agents(storage)
     try:
         if name == "innerlife_explore":
             result = AutonomousExperienceEngine(storage, settings).explore(
@@ -234,7 +232,7 @@ async def call_tool(name: str, arguments: dict):
         elif name == "innerlife_session_start":
             result = SessionLifecycle(storage, settings).start(
                 agent_id=_agent(arguments),
-                user_id=arguments.get("user_id", "zhouwei"),
+                user_id=arguments["user_id"],
                 host=arguments["host"],
                 external_session_id=arguments["external_session_id"],
             )

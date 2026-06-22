@@ -7,7 +7,7 @@ from innerlife.storage import Storage
 
 def test_state_and_history_survive_reopen(storage):
     storage.submit_event(
-        "clara",
+        "agent-a",
         "afterthought",
         "session-a",
         {"text": "重启不能改变连续性"},
@@ -26,11 +26,11 @@ def test_state_and_history_survive_reopen(storage):
         "state_update": {"recent_focus": "重启后的连续性"},
         "pending_shares": [],
     }
-    DigestEngine(storage, FakeBackend(response=response)).run("clara")
-    expected = storage.get_agent("clara")
+    DigestEngine(storage, FakeBackend(response=response)).run("agent-a")
+    expected = storage.get_agent("agent-a")
 
     reopened = Storage(storage.db_path)
-    assert reopened.get_agent("clara") == expected
-    assert reopened.recent_internal_events("clara")[0]["source_refs"] == [
+    assert reopened.get_agent("agent-a") == expected
+    assert reopened.recent_internal_events("agent-a")[0]["source_refs"] == [
         "restart_source"
     ]

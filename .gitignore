@@ -15,3 +15,5 @@ data/
 *.log
 *.py[cod]
 .claude/settings.local.json
+profiles/*.json
+!profiles/example-agent.json

@@ -60,6 +60,15 @@ class SessionLifecycle:
         host: str,
         external_session_id: str | None = None,
     ) -> dict[str, Any]:
+        user_id = user_id.strip()
+        if not user_id:
+            raise ValidationError("user_id is required")
+        profile = self.storage.get_agent(agent_id)["profile"]
+        allowed_users = profile.get("boundaries", {}).get("can_access_users", [])
+        if allowed_users and user_id not in allowed_users:
+            raise ValidationError(
+                f"user_id {user_id!r} is not allowed by agent {agent_id!r}"
+            )
         briefing = get_briefing(self.storage, agent_id)
         session = self.storage.start_session(
             agent_id=agent_id,
