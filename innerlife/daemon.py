@@ -9,6 +9,7 @@ from typing import Any
 
 from .config import Settings
 from .autonomous import AutonomousExperienceEngine
+from .convergence import ConvergenceEngine
 from .digest import DigestEngine, make_backend
 from .integrations import sync_continuity, sync_memoria
 from .storage import Storage, utc_now
@@ -42,6 +43,9 @@ class InnerLifeDaemon:
         self.autonomous = AutonomousExperienceEngine(
             self.storage, settings, self.backend
         )
+        self.convergence = ConvergenceEngine(
+            self.storage, settings, self.backend
+        )
         self.stop_event = Event()
 
     def stop(self, *_: Any) -> None:
@@ -73,6 +77,7 @@ class InnerLifeDaemon:
         sync_results = self.sync_sources()
         processed: list[dict[str, Any]] = []
         explorations: list[dict[str, Any]] = []
+        convergences: list[dict[str, Any]] = []
         errors: list[dict[str, str]] = []
         for agent in self.storage.list_agents():
             agent_id = agent["agent_id"]
@@ -89,7 +94,10 @@ class InnerLifeDaemon:
             mode: str | None = None
             if pending:
                 mode = "light"
-            elif state.get("open_loops"):
+            elif any(
+                isinstance(loop, dict) and loop.get("status", "open") == "open"
+                for loop in state.get("open_loops", [])
+            ):
                 idle = _seconds_since(latest["created_at"] if latest else None)
                 if idle >= self.settings.deep_idle_seconds:
                     mode = "deep"
@@ -148,6 +156,26 @@ class InnerLifeDaemon:
                     errors.append(
                         {"agent_id": agent_id, "stage": "autonomous", "error": str(exc)}
                     )
+        for agent in self.storage.list_agents():
+            agent_id = agent["agent_id"]
+            if self.storage.active_session_count(agent_id):
+                continue
+            if self.storage.pending_events(agent_id):
+                continue
+            if not self.convergence.needs_run(agent_id):
+                continue
+            policy = self.convergence.policy(agent_id)
+            latest_runs = self.storage.list_convergence_runs(agent_id, 1)
+            if latest_runs and _seconds_since(latest_runs[0]["created_at"]) < (
+                float(policy["min_interval_hours"]) * 3600
+            ):
+                continue
+            try:
+                convergences.append(self.convergence.run(agent_id))
+            except Exception as exc:
+                errors.append(
+                    {"agent_id": agent_id, "stage": "convergence", "error": str(exc)}
+                )
         heartbeat = {
             "pid": __import__("os").getpid(),
             "time": utc_now(),
@@ -159,6 +187,7 @@ class InnerLifeDaemon:
             "sync": sync_results,
             "processed": len(processed),
             "explorations": len(explorations),
+            "convergences": len(convergences),
             "errors": errors,
         }
         self.storage.set_service_state("daemon.heartbeat", heartbeat)
@@ -166,6 +195,7 @@ class InnerLifeDaemon:
             "heartbeat": heartbeat,
             "results": processed,
             "explorations": explorations,
+            "convergences": convergences,
         }
 
     def run(self, once: bool = False) -> int:

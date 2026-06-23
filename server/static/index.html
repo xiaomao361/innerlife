@@ -42,6 +42,8 @@
       <section><h2>当前关注</h2><ul id="interests"></ul></section>
       <section><h2>未完成问题</h2><ul id="loops"></ul></section>
       <section><h2>待分享念头</h2><div id="shares"></div></section>
+      <section><h2>活跃状态规模</h2><div id="context-counts"></div></section>
+      <section class="wide"><h2>稳定认识</h2><div id="summaries"></div></section>
       <section class="wide"><h2>最近内部变化</h2><div id="events"></div></section>
     </div>
   </main>
@@ -74,6 +76,16 @@
         const b = await get(`/api/agents/${agent}/briefing`);
         list($("interests"), b.current_interests);
         list($("loops"), b.open_loops, x => x.content);
+        const counts = b.active_context_counts;
+        $("context-counts").innerHTML =
+          `<div>内部变化：${counts.active_internal_events}</div>
+           <div>自主经历：${counts.active_experiences}</div>
+           <div>活跃问题：${counts.active_open_loops}</div>
+           <div>降温问题：${counts.dormant_open_loops}</div>`;
+        $("summaries").innerHTML = b.stable_summaries.length ? b.stable_summaries.map(s =>
+          `<div class="event"><strong>${s.title}</strong><div>${s.content}</div>
+          <div class="muted">来源：${s.source_refs.join(", ")}</div></div>`
+        ).join("") : '<div class="empty">暂无</div>';
         $("shares").innerHTML = b.pending_shares.length ? b.pending_shares.map(s =>
           `<div class="event"><div>${s.content}</div><div class="muted">${s.share_mode} · ${s.decision_status} · 延后 ${s.defer_count}</div>
           <button onclick="markShare('${s.id}','used')">已使用</button>

@@ -6,6 +6,8 @@ from innerlife.config import Settings
 from innerlife.daemon import InnerLifeDaemon
 from innerlife.storage import Storage
 from conftest import load_profile
+from innerlife.llm import FakeBackend
+from innerlife.convergence import ConvergenceEngine
 
 
 def test_daemon_processes_pending_and_records_heartbeat(tmp_path, monkeypatch):
@@ -83,3 +85,69 @@ def test_settings_loads_secret_file_declared_inside_private_env(tmp_path, monkey
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
 
     assert Settings.from_env().api_key == "indirect-secret"
+
+
+def test_daemon_runs_convergence_when_active_context_exceeds_limit(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("INNERLIFE_DB_PATH", str(tmp_path / "converge.db"))
+    monkeypatch.setenv("INNERLIFE_ROOT", str(tmp_path))
+    monkeypatch.setenv("INNERLIFE_LLM_BACKEND", "fake")
+    monkeypatch.setenv("INNERLIFE_AUTONOMY_ENABLED", "false")
+    daemon = InnerLifeDaemon(Settings.from_env())
+    profile = load_profile("agent-a")
+    profile["convergence"] = {
+        "enabled": True,
+        "max_active_internal_events": 1,
+        "max_active_experiences": 20,
+        "max_active_open_loops": 12,
+        "min_interval_hours": 0,
+        "max_archive_events_per_run": 10,
+        "max_archive_experiences_per_run": 10,
+    }
+    daemon.storage.create_agent(profile)
+    with daemon.storage.transaction() as conn:
+        for index in range(2):
+            conn.execute(
+                """
+                INSERT INTO internal_events(
+                  id, agent_id, event_type, content, source,
+                  source_refs_json, metadata_json, fingerprint, created_at
+                ) VALUES (?, 'agent-a', 'new_insight', ?, 'digest',
+                  '["seed"]', '{}', ?, ?)
+                """,
+                (
+                    f"daemon_convergence_{index}",
+                    f"旧理解 {index}",
+                    f"daemon-fingerprint-{index}",
+                    f"2026-01-0{index + 1}T00:00:00+00:00",
+                ),
+            )
+
+    def responder(payload):
+        event = payload["archive_candidates"]["internal_events"][0]
+        return {
+            "changed": True,
+            "reason": "后台自动整理旧理解",
+            "summary": {
+                "title": "后台整理",
+                "content": "旧理解已经收敛。",
+                "source_refs": [event["id"]],
+            },
+            "archive_internal_event_ids": [event["id"]],
+            "archive_experience_ids": [],
+            "dormant_loop_ids": [],
+            "resolved_loop_ids": [],
+        }
+
+    daemon.convergence = ConvergenceEngine(
+        daemon.storage,
+        daemon.settings,
+        FakeBackend(responder=responder),
+    )
+    result = daemon.process_once()
+
+    assert result["heartbeat"]["convergences"] == 1
+    assert daemon.storage.convergence_pressure("agent-a")[
+        "active_internal_events"
+    ] == 1

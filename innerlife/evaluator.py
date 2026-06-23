@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import uuid
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from typing import Any
 
@@ -155,6 +156,9 @@ def _merge_state(
                 "content": content,
                 "source_refs": refs,
                 "status": item.get("status", "open"),
+                "created_at": item.get("created_at")
+                or datetime.now(timezone.utc).isoformat(),
+                "last_reinforced_at": datetime.now(timezone.utc).isoformat(),
             }
         )
         existing_loop_text.add(_normalize_text(content))

@@ -13,11 +13,11 @@ from typing import Any
 
 from .config import PROJECT_ROOT, Settings
 from .digest import DigestEngine, make_backend
-from .models import ModelError, ValidationError
+from .models import ModelError, ValidationError, active_state_view
 from .storage import Storage, new_id, utc_now
 
 
-USER_AGENT = "InnerLife/2.2 (+autonomous-experience; read-only)"
+USER_AGENT = "InnerLife/2.3 (+autonomous-experience; read-only)"
 
 
 class TextExtractor(HTMLParser):
@@ -210,8 +210,9 @@ class AutonomousExperienceEngine:
             {
                 "agent_id": agent_id,
                 "profile": agent["profile"],
-                "state": agent["state"],
+                "state": active_state_view(agent["state"]),
                 "recent_experiences": self.storage.list_autonomous_experiences(agent_id, 10),
+                "stable_summaries": self.storage.list_inner_summaries(agent_id, 10),
                 "candidates": candidates,
             },
             self.settings.model_for("light"),
@@ -273,7 +274,7 @@ class AutonomousExperienceEngine:
             {
                 "agent_id": agent_id,
                 "profile": agent["profile"],
-                "state": agent["state"],
+                "state": active_state_view(agent["state"]),
                 "selection_reason": reason,
                 "evidence": evidence,
             },

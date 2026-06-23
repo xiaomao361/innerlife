@@ -14,12 +14,13 @@ from pydantic import BaseModel
 
 from innerlife.config import Settings
 from innerlife.autonomous import AutonomousExperienceEngine
+from innerlife.convergence import ConvergenceEngine
 from innerlife.digest import run_from_settings
 from innerlife.service import get_briefing, system_status
 from innerlife.session import SessionLifecycle
 from innerlife.storage import Storage
 
-app = FastAPI(title="InnerLife", version="2.2.0")
+app = FastAPI(title="InnerLife", version="2.3.0")
 STATIC_DIR = SERVER_DIR / "static"
 
 
@@ -92,8 +93,16 @@ async def inbox(
 
 
 @app.get("/api/agents/{agent_id}/history")
-async def history(agent_id: str, limit: int = Query(default=50, le=500)):
-    return {"events": store().recent_internal_events(agent_id, limit)}
+async def history(
+    agent_id: str,
+    limit: int = Query(default=50, le=500),
+    include_archived: bool = False,
+):
+    return {
+        "events": store().recent_internal_events(
+            agent_id, limit, include_archived
+        )
+    }
 
 
 @app.get("/api/agents/{agent_id}/runs")
@@ -189,8 +198,16 @@ async def explore(agent_id: str):
 
 
 @app.get("/api/agents/{agent_id}/experiences")
-async def experiences(agent_id: str, limit: int = Query(default=50, le=500)):
-    return {"experiences": store().list_autonomous_experiences(agent_id, limit)}
+async def experiences(
+    agent_id: str,
+    limit: int = Query(default=50, le=500),
+    include_archived: bool = False,
+):
+    return {
+        "experiences": store().list_autonomous_experiences(
+            agent_id, limit, include_archived
+        )
+    }
 
 
 @app.get("/api/agents/{agent_id}/explorations")
@@ -210,6 +227,31 @@ async def share_actions(
     limit: int = Query(default=100, le=500),
 ):
     return {"actions": store().share_actions(agent_id, share_id, limit)}
+
+
+@app.post("/api/agents/{agent_id}/converge")
+async def converge(agent_id: str, force: bool = False):
+    try:
+        settings = Settings.from_env()
+        return ConvergenceEngine(store(), settings).run(agent_id, force=force)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/agents/{agent_id}/summaries")
+async def summaries(agent_id: str, limit: int = Query(default=20, le=200)):
+    return {"summaries": store().list_inner_summaries(agent_id, limit)}
+
+
+@app.get("/api/agents/{agent_id}/convergence-runs")
+async def convergence_runs(
+    agent_id: str, limit: int = Query(default=50, le=500)
+):
+    storage = store()
+    return {
+        "runs": storage.list_convergence_runs(agent_id, limit),
+        "pressure": storage.convergence_pressure(agent_id),
+    }
 
 
 def main():

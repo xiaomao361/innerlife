@@ -8,6 +8,7 @@ from typing import Any
 
 from .config import Settings
 from .autonomous import AutonomousExperienceEngine
+from .convergence import ConvergenceEngine
 from .digest import run_from_settings
 from .daemon import InnerLifeDaemon
 from .integrations import sync_continuity, sync_memoria
@@ -90,6 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
     history = sub.add_parser("history")
     history.add_argument("--agent", required=True)
     history.add_argument("--limit", type=int, default=50)
+    history.add_argument("--include-archived", action="store_true")
     _add_json_flag(history)
 
     pending = sub.add_parser("pending")
@@ -192,12 +194,29 @@ def build_parser() -> argparse.ArgumentParser:
     experiences = sub.add_parser("experiences")
     experiences.add_argument("--agent", required=True)
     experiences.add_argument("--limit", type=int, default=50)
+    experiences.add_argument("--include-archived", action="store_true")
     _add_json_flag(experiences)
 
     explorations = sub.add_parser("explorations")
     explorations.add_argument("--agent", required=True)
     explorations.add_argument("--limit", type=int, default=50)
     _add_json_flag(explorations)
+
+    converge = sub.add_parser("converge")
+    converge.add_argument("--agent", required=True)
+    converge.add_argument("--force", action="store_true")
+    _add_json_flag(converge)
+
+    summaries = sub.add_parser("summaries")
+    summaries.add_argument("--agent", required=True)
+    summaries.add_argument("--limit", type=int, default=20)
+    summaries.add_argument("--include-archived", action="store_true")
+    _add_json_flag(summaries)
+
+    convergence_runs = sub.add_parser("convergence-runs")
+    convergence_runs.add_argument("--agent", required=True)
+    convergence_runs.add_argument("--limit", type=int, default=50)
+    _add_json_flag(convergence_runs)
 
     scenarios = sub.add_parser("run-scenarios")
     scenarios.add_argument("path")
@@ -236,7 +255,9 @@ def execute(args: argparse.Namespace, settings: Settings) -> Any:
     if args.command == "history":
         return {
             "agent_id": args.agent,
-            "internal_events": storage.recent_internal_events(args.agent, args.limit),
+            "internal_events": storage.recent_internal_events(
+                args.agent, args.limit, args.include_archived
+            ),
         }
     if args.command == "pending":
         return {
@@ -343,12 +364,31 @@ def execute(args: argparse.Namespace, settings: Settings) -> Any:
     if args.command == "experiences":
         return {
             "agent_id": args.agent,
-            "experiences": storage.list_autonomous_experiences(args.agent, args.limit),
+            "experiences": storage.list_autonomous_experiences(
+                args.agent, args.limit, args.include_archived
+            ),
         }
     if args.command == "explorations":
         return {
             "agent_id": args.agent,
             "explorations": storage.list_exploration_runs(args.agent, args.limit),
+        }
+    if args.command == "converge":
+        return ConvergenceEngine(storage, settings).run(
+            args.agent, force=args.force
+        )
+    if args.command == "summaries":
+        return {
+            "agent_id": args.agent,
+            "summaries": storage.list_inner_summaries(
+                args.agent, args.limit, args.include_archived
+            ),
+        }
+    if args.command == "convergence-runs":
+        return {
+            "agent_id": args.agent,
+            "runs": storage.list_convergence_runs(args.agent, args.limit),
+            "pressure": storage.convergence_pressure(args.agent),
         }
     if args.command == "run-scenarios":
         result = run_scenarios(args.path)

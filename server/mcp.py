@@ -20,12 +20,13 @@ from mcp.types import TextContent, Tool
 
 from innerlife.config import Settings
 from innerlife.autonomous import AutonomousExperienceEngine
+from innerlife.convergence import ConvergenceEngine
 from innerlife.digest import run_from_settings
 from innerlife.service import get_briefing, system_status
 from innerlife.session import SessionLifecycle
 from innerlife.storage import Storage
 
-server = Server("innerlife", version="2.2.0")
+server = Server("innerlife", version="2.3.0")
 
 
 def _agent(arguments: dict) -> str:
@@ -46,6 +47,28 @@ def _json(value) -> list[TextContent]:
 
 
 TOOLS = [
+    Tool(
+        name="innerlife_converge",
+        description="整理超过阈值的活跃内部状态，形成可追溯摘要并归档旧内容。通常由后台自动运行。",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "force": {"type": "boolean", "default": False},
+            },
+        },
+    ),
+    Tool(
+        name="innerlife_summaries",
+        description="查看 Agent 由旧内部变化和经历收敛形成的稳定认识。",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "limit": {"type": "integer", "default": 20},
+            },
+        },
+    ),
     Tool(
         name="innerlife_share_check",
         description="在对话进行中提交当前上下文，让 InnerLife 决定是否自然带入一条待分享内容。每次最多返回一条。",
@@ -246,7 +269,15 @@ async def call_tool(name: str, arguments: dict):
     storage = Storage(settings.db_path)
     storage.init_db()
     try:
-        if name == "innerlife_share_check":
+        if name == "innerlife_converge":
+            result = ConvergenceEngine(storage, settings).run(
+                _agent(arguments), force=arguments.get("force", False)
+            )
+        elif name == "innerlife_summaries":
+            result = storage.list_inner_summaries(
+                _agent(arguments), int(arguments.get("limit", 20))
+            )
+        elif name == "innerlife_share_check":
             result = SessionLifecycle(storage, settings).check_shares(
                 session_id=arguments["session_id"],
                 agent_id=_agent(arguments),

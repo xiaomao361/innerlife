@@ -70,6 +70,16 @@ class FakeBackend:
                 "reason": "The fake backend does not surface pending shares.",
                 "suggested_opening": "",
             }
+        if "archive_candidates" in payload:
+            return {
+                "changed": False,
+                "reason": "The fake backend does not consolidate state automatically.",
+                "summary": None,
+                "archive_internal_event_ids": [],
+                "archive_experience_ids": [],
+                "dormant_loop_ids": [],
+                "resolved_loop_ids": [],
+            }
         events = payload.get("pending_inbox_events", [])
         if not events:
             return {

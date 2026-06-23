@@ -57,6 +57,9 @@ CREATE TABLE IF NOT EXISTS internal_events (
   metadata_json TEXT NOT NULL DEFAULT '{}',
   fingerprint TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  lifecycle_status TEXT NOT NULL DEFAULT 'active',
+  archived_at TEXT,
+  archive_reason TEXT,
   FOREIGN KEY(agent_id) REFERENCES agent_profiles(agent_id)
 );
 
@@ -187,9 +190,40 @@ CREATE TABLE IF NOT EXISTS autonomous_experiences (
   evidence_json TEXT NOT NULL,
   experience_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  lifecycle_status TEXT NOT NULL DEFAULT 'active',
+  archived_at TEXT,
+  archive_reason TEXT,
   UNIQUE(agent_id, content_fingerprint),
   FOREIGN KEY(agent_id) REFERENCES agent_profiles(agent_id),
   FOREIGN KEY(run_id) REFERENCES exploration_runs(id)
+);
+
+CREATE TABLE IF NOT EXISTS inner_summaries (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  source_refs_json TEXT NOT NULL,
+  summary_type TEXT NOT NULL DEFAULT 'consolidation',
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(agent_id) REFERENCES agent_profiles(agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inner_summaries_agent
+ON inner_summaries(agent_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS convergence_runs (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  reason TEXT,
+  input_counts_json TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(agent_id) REFERENCES agent_profiles(agent_id)
 );
 """
 
@@ -257,6 +291,30 @@ class Storage:
                     conn.execute(
                         f"ALTER TABLE pending_shares ADD COLUMN {name} {definition}"
                     )
+            lifecycle_migrations = {
+                "internal_events": {
+                    "lifecycle_status": "TEXT NOT NULL DEFAULT 'active'",
+                    "archived_at": "TEXT",
+                    "archive_reason": "TEXT",
+                },
+                "autonomous_experiences": {
+                    "lifecycle_status": "TEXT NOT NULL DEFAULT 'active'",
+                    "archived_at": "TEXT",
+                    "archive_reason": "TEXT",
+                },
+            }
+            for table, definitions in lifecycle_migrations.items():
+                existing = {
+                    row["name"]
+                    for row in conn.execute(
+                        f"PRAGMA table_info({table})"
+                    ).fetchall()
+                }
+                for name, definition in definitions.items():
+                    if name not in existing:
+                        conn.execute(
+                            f"ALTER TABLE {table} ADD COLUMN {name} {definition}"
+                        )
         return {"db_path": str(self.db_path), "initialized": True}
 
     def create_agent(self, profile: dict[str, Any]) -> dict[str, Any]:
@@ -480,7 +538,7 @@ class Storage:
         return [self._inbox_row(row) for row in rows]
 
     def recent_internal_events(
-        self, agent_id: str, limit: int = 50
+        self, agent_id: str, limit: int = 50, include_archived: bool = False
     ) -> list[dict[str, Any]]:
         with self.connect() as conn:
             self._agent_exists(conn, agent_id)
@@ -488,10 +546,11 @@ class Storage:
                 """
                 SELECT * FROM internal_events
                 WHERE agent_id = ?
+                  AND (? OR lifecycle_status = 'active')
                 ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
-                (agent_id, limit),
+                (agent_id, int(include_archived), limit),
             ).fetchall()
         return [
             {
@@ -504,6 +563,9 @@ class Storage:
                 "metadata": load(row["metadata_json"]),
                 "fingerprint": row["fingerprint"],
                 "created_at": row["created_at"],
+                "lifecycle_status": row["lifecycle_status"],
+                "archived_at": row["archived_at"],
+                "archive_reason": row["archive_reason"],
             }
             for row in rows
         ]
@@ -602,6 +664,8 @@ class Storage:
                 "exploration_runs",
                 "autonomous_experiences",
                 "share_actions",
+                "inner_summaries",
+                "convergence_runs",
             ]
             counts = {
                 table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -612,6 +676,12 @@ class Storage:
             ).fetchone()[0]
             counts["pending_shares"] = conn.execute(
                 "SELECT COUNT(*) FROM pending_shares WHERE status = 'pending'"
+            ).fetchone()[0]
+            counts["active_internal_events"] = conn.execute(
+                "SELECT COUNT(*) FROM internal_events WHERE lifecycle_status='active'"
+            ).fetchone()[0]
+            counts["active_experiences"] = conn.execute(
+                "SELECT COUNT(*) FROM autonomous_experiences WHERE lifecycle_status='active'"
             ).fetchone()[0]
         return {"db_path": str(self.db_path), **counts}
 
@@ -1166,15 +1236,16 @@ class Storage:
         return result
 
     def list_autonomous_experiences(
-        self, agent_id: str, limit: int = 50
+        self, agent_id: str, limit: int = 50, include_archived: bool = False
     ) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
                 """
                 SELECT * FROM autonomous_experiences
-                WHERE agent_id=? ORDER BY created_at DESC LIMIT ?
+                WHERE agent_id=? AND (? OR lifecycle_status='active')
+                ORDER BY created_at DESC LIMIT ?
                 """,
-                (agent_id, limit),
+                (agent_id, int(include_archived), limit),
             ).fetchall()
         results = []
         for row in rows:
@@ -1183,6 +1254,243 @@ class Storage:
             item["experience"] = load(item.pop("experience_json"))
             results.append(item)
         return results
+
+    def list_inner_summaries(
+        self, agent_id: str, limit: int = 20, include_archived: bool = False
+    ) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            self._agent_exists(conn, agent_id)
+            rows = conn.execute(
+                """
+                SELECT * FROM inner_summaries
+                WHERE agent_id=? AND (? OR status='active')
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (agent_id, int(include_archived), limit),
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            item["source_refs"] = load(item.pop("source_refs_json"))
+            results.append(item)
+        return results
+
+    def list_convergence_runs(
+        self, agent_id: str, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            self._agent_exists(conn, agent_id)
+            rows = conn.execute(
+                """
+                SELECT * FROM convergence_runs
+                WHERE agent_id=? ORDER BY created_at DESC LIMIT ?
+                """,
+                (agent_id, limit),
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            item["input_counts"] = load(item.pop("input_counts_json"))
+            item["result"] = load(item.pop("result_json"))
+            results.append(item)
+        return results
+
+    def convergence_pressure(self, agent_id: str) -> dict[str, int]:
+        agent = self.get_agent(agent_id)
+        with self.connect() as conn:
+            active_events = conn.execute(
+                """
+                SELECT COUNT(*) FROM internal_events
+                WHERE agent_id=? AND lifecycle_status='active'
+                """,
+                (agent_id,),
+            ).fetchone()[0]
+            active_experiences = conn.execute(
+                """
+                SELECT COUNT(*) FROM autonomous_experiences
+                WHERE agent_id=? AND lifecycle_status='active'
+                """,
+                (agent_id,),
+            ).fetchone()[0]
+        active_loops = sum(
+            1
+            for loop in agent["state"].get("open_loops", [])
+            if isinstance(loop, dict) and loop.get("status", "open") == "open"
+        )
+        dormant_loops = sum(
+            1
+            for loop in agent["state"].get("open_loops", [])
+            if isinstance(loop, dict) and loop.get("status") == "dormant"
+        )
+        return {
+            "active_internal_events": int(active_events),
+            "active_experiences": int(active_experiences),
+            "active_open_loops": active_loops,
+            "dormant_open_loops": dormant_loops,
+        }
+
+    def commit_convergence(
+        self,
+        *,
+        run_id: str,
+        agent_id: str,
+        reason: str,
+        input_counts: dict[str, Any],
+        summary: dict[str, Any] | None,
+        archive_event_ids: list[str],
+        archive_experience_ids: list[str],
+        dormant_loop_ids: list[str],
+        resolved_loop_ids: list[str],
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        now = utc_now()
+        agent = self.get_agent(agent_id)
+        loops = [
+            dict(loop)
+            for loop in agent["state"].get("open_loops", [])
+            if isinstance(loop, dict)
+        ]
+        known_loop_ids = {str(loop.get("id")) for loop in loops if loop.get("id")}
+        unknown_loops = (
+            set(dormant_loop_ids) | set(resolved_loop_ids)
+        ) - known_loop_ids
+        if unknown_loops:
+            raise ValidationError(
+                f"Convergence selected unknown loops: {sorted(unknown_loops)}"
+            )
+        with self.transaction() as conn:
+            self._agent_exists(conn, agent_id)
+            if archive_event_ids:
+                placeholders = ",".join("?" for _ in archive_event_ids)
+                rows = conn.execute(
+                    f"""
+                    SELECT id FROM internal_events
+                    WHERE agent_id=? AND lifecycle_status='active'
+                      AND id IN ({placeholders})
+                    """,
+                    (agent_id, *archive_event_ids),
+                ).fetchall()
+                found = {row["id"] for row in rows}
+                if found != set(archive_event_ids):
+                    raise ValidationError("Convergence selected unavailable internal events")
+                conn.execute(
+                    f"""
+                    UPDATE internal_events SET lifecycle_status='archived',
+                      archived_at=?, archive_reason=?
+                    WHERE agent_id=? AND id IN ({placeholders})
+                    """,
+                    (now, reason, agent_id, *archive_event_ids),
+                )
+            if archive_experience_ids:
+                placeholders = ",".join("?" for _ in archive_experience_ids)
+                rows = conn.execute(
+                    f"""
+                    SELECT id FROM autonomous_experiences
+                    WHERE agent_id=? AND lifecycle_status='active'
+                      AND id IN ({placeholders})
+                    """,
+                    (agent_id, *archive_experience_ids),
+                ).fetchall()
+                found = {row["id"] for row in rows}
+                if found != set(archive_experience_ids):
+                    raise ValidationError("Convergence selected unavailable experiences")
+                conn.execute(
+                    f"""
+                    UPDATE autonomous_experiences SET lifecycle_status='archived',
+                      archived_at=?, archive_reason=?
+                    WHERE agent_id=? AND id IN ({placeholders})
+                    """,
+                    (now, reason, agent_id, *archive_experience_ids),
+                )
+            next_loops = []
+            for loop in loops:
+                loop_id = str(loop.get("id") or "")
+                if loop_id in resolved_loop_ids:
+                    continue
+                if loop_id in dormant_loop_ids:
+                    loop["status"] = "dormant"
+                    loop["dormant_at"] = now
+                next_loops.append(loop)
+            state = dict(agent["state"])
+            state["open_loops"] = next_loops
+            if summary:
+                conn.execute(
+                    """
+                    INSERT INTO inner_summaries(
+                      id, agent_id, title, content, source_refs_json,
+                      summary_type, status, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, 'consolidation', 'active', ?, ?)
+                    """,
+                    (
+                        summary["id"],
+                        agent_id,
+                        summary["title"],
+                        summary["content"],
+                        dump(summary["source_refs"]),
+                        now,
+                        now,
+                    ),
+                )
+            changed = bool(
+                summary
+                or archive_event_ids
+                or archive_experience_ids
+                or dormant_loop_ids
+                or resolved_loop_ids
+            )
+            if changed:
+                conn.execute(
+                    """
+                    UPDATE agent_state SET state_json=?, revision=revision+1,
+                      updated_at=? WHERE agent_id=?
+                    """,
+                    (dump(state), now, agent_id),
+                )
+            conn.execute(
+                """
+                INSERT INTO convergence_runs(
+                  id, agent_id, status, reason, input_counts_json,
+                  result_json, error, created_at
+                ) VALUES (?, ?, 'completed', ?, ?, ?, NULL, ?)
+                """,
+                (
+                    run_id,
+                    agent_id,
+                    reason,
+                    dump(input_counts),
+                    dump(result),
+                    now,
+                ),
+            )
+        return self.list_convergence_runs(agent_id, 1)[0]
+
+    def record_failed_convergence(
+        self,
+        *,
+        run_id: str,
+        agent_id: str,
+        input_counts: dict[str, Any],
+        error: str,
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        with self.transaction() as conn:
+            self._agent_exists(conn, agent_id)
+            conn.execute(
+                """
+                INSERT INTO convergence_runs(
+                  id, agent_id, status, reason, input_counts_json,
+                  result_json, error, created_at
+                ) VALUES (?, ?, 'failed', NULL, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    agent_id,
+                    dump(input_counts),
+                    dump(result or {}),
+                    error,
+                    utc_now(),
+                ),
+            )
 
     def list_exploration_runs(self, agent_id: str, limit: int = 50) -> list[dict[str, Any]]:
         with self.connect() as conn:

@@ -70,7 +70,7 @@ def main():
         assert initialized["result"]["serverInfo"]["name"] == "innerlife"
         client.notify("notifications/initialized")
         tools = client.request("tools/list")["result"]["tools"]
-        assert len(tools) == 16
+        assert len(tools) == 18
         started = content(
             client.request(
                 "tools/call",

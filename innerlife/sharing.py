@@ -5,7 +5,7 @@ from typing import Any
 
 from .config import PROJECT_ROOT, Settings
 from .digest import make_backend
-from .models import ValidationError
+from .models import ValidationError, active_state_view
 from .storage import Storage
 
 
@@ -144,7 +144,7 @@ class ShareScheduler:
             "agent_id": agent_id,
             "user_id": user_id,
             "profile": agent["profile"],
-            "state": agent["state"],
+            "state": active_state_view(agent["state"]),
             "policy": policy,
             "conversation_context": conversation_context,
             "candidate_shares": candidates,

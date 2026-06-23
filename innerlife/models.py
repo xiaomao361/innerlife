@@ -29,6 +29,16 @@ DEFAULT_STATE: dict[str, Any] = {
 }
 
 
+def active_state_view(state: dict[str, Any]) -> dict[str, Any]:
+    result = dict(state)
+    result["open_loops"] = [
+        loop
+        for loop in state.get("open_loops", [])
+        if isinstance(loop, dict) and loop.get("status", "open") == "open"
+    ]
+    return result
+
+
 @dataclass(frozen=True)
 class DigestResult:
     run_id: str

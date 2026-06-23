@@ -13,12 +13,18 @@ def get_briefing(storage: Storage, agent_id: str, event_limit: int = 8) -> dict[
     events = storage.recent_internal_events(agent_id, event_limit)
     shares = storage.pending_shares(agent_id)
     experiences = storage.list_autonomous_experiences(agent_id, 5)
+    summaries = storage.list_inner_summaries(agent_id, 5)
     state = agent["state"]
+    active_loops = [
+        loop
+        for loop in state.get("open_loops", [])
+        if isinstance(loop, dict) and loop.get("status", "open") == "open"
+    ]
     return {
         "agent_id": agent_id,
         "display_name": agent["profile"]["display_name"],
         "current_interests": state.get("current_interests", []),
-        "open_loops": state.get("open_loops", []),
+        "open_loops": active_loops,
         "recent_mood": state.get("recent_mood"),
         "recent_focus": state.get("recent_focus"),
         "recent_internal_events": events,
@@ -34,6 +40,8 @@ def get_briefing(storage: Storage, agent_id: str, event_limit: int = 8) -> dict[
             }
             for item in experiences
         ],
+        "stable_summaries": summaries,
+        "active_context_counts": storage.convergence_pressure(agent_id),
         "guidance": (
             "这些是 Agent 的内部状态，不是必须播报的通知。"
             "待分享内容必须经过 share_plan 或 share_check 的二次判断；"

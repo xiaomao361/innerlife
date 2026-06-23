@@ -12,7 +12,7 @@ from .llm import (
     FakeBackend,
     OpenAICompatibleBackend,
 )
-from .models import DigestResult, InnerLifeError, ValidationError
+from .models import DigestResult, InnerLifeError, ValidationError, active_state_view
 from .storage import Storage, new_id
 
 
@@ -63,7 +63,7 @@ class DigestEngine:
             "agent_id": agent_id,
             "mode": mode,
             "profile": agent["profile"],
-            "state": agent["state"],
+            "state": active_state_view(agent["state"]),
             "pending_inbox_events": pending,
             "recent_internal_events": recent,
         }

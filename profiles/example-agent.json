@@ -28,6 +28,15 @@
     "min_interval_hours": 24,
     "max_explorations_per_day": 1
   },
+  "convergence": {
+    "enabled": true,
+    "max_active_internal_events": 40,
+    "max_active_experiences": 20,
+    "max_active_open_loops": 12,
+    "min_interval_hours": 24,
+    "max_archive_events_per_run": 20,
+    "max_archive_experiences_per_run": 10
+  },
   "autonomous_sources": [
     {
       "id": "example-agent-philosophy",
