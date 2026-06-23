@@ -61,6 +61,15 @@ class FakeBackend:
                 "agent_afterthought": "",
                 "open_loops": [],
             }
+        if "candidate_shares" in payload:
+            return {
+                "selected": False,
+                "share_id": None,
+                "decision": "wait",
+                "delivery_style": None,
+                "reason": "The fake backend does not surface pending shares.",
+                "suggested_opening": "",
+            }
         events = payload.get("pending_inbox_events", [])
         if not events:
             return {

@@ -17,7 +17,7 @@ from .models import ModelError, ValidationError
 from .storage import Storage, new_id, utc_now
 
 
-USER_AGENT = "InnerLife/2.1 (+autonomous-experience; read-only)"
+USER_AGENT = "InnerLife/2.2 (+autonomous-experience; read-only)"
 
 
 class TextExtractor(HTMLParser):

@@ -56,3 +56,28 @@ def test_pending_events_have_stable_order(storage):
         "event_a",
         "event_b",
     ]
+
+
+def test_init_migrates_old_pending_share_table(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE pending_shares (
+              id TEXT PRIMARY KEY, agent_id TEXT, user_id TEXT, content TEXT,
+              reason TEXT, share_mode TEXT, urgency REAL, relevance REAL,
+              novelty REAL, status TEXT, source_refs_json TEXT,
+              created_at TEXT, expires_at TEXT
+            )
+            """
+        )
+
+    Storage(path).init_db()
+
+    with sqlite3.connect(path) as conn:
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(pending_shares)")
+        }
+    assert {"decision_status", "defer_count", "last_surfaced_at"} <= columns

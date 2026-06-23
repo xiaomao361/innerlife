@@ -16,6 +16,10 @@
   "share_policy": {
     "default_mode": "when_relevant",
     "max_proactive_per_day": 1,
+    "proactive_after_hours": 12,
+    "repeat_cooldown_hours": 24,
+    "max_defer_count": 3,
+    "stale_after_days": 7,
     "avoid_checkin_style": true,
     "avoid_fake_life_events": true
   },

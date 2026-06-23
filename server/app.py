@@ -19,7 +19,7 @@ from innerlife.service import get_briefing, system_status
 from innerlife.session import SessionLifecycle
 from innerlife.storage import Storage
 
-app = FastAPI(title="InnerLife", version="2.1.0")
+app = FastAPI(title="InnerLife", version="2.2.0")
 STATIC_DIR = SERVER_DIR / "static"
 
 
@@ -53,6 +53,10 @@ class SessionStartRequest(BaseModel):
 class SessionEndRequest(BaseModel):
     conversation: dict[str, Any]
     process_now: bool = True
+
+
+class ShareCheckRequest(BaseModel):
+    conversation_context: dict[str, Any]
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -155,6 +159,21 @@ async def session_end(agent_id: str, session_id: str, request: SessionEndRequest
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.post("/api/agents/{agent_id}/sessions/{session_id}/shares/check")
+async def share_check(
+    agent_id: str, session_id: str, request: ShareCheckRequest
+):
+    try:
+        settings = Settings.from_env()
+        return SessionLifecycle(store(), settings).check_shares(
+            session_id=session_id,
+            agent_id=agent_id,
+            conversation_context=request.conversation_context,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get("/api/agents/{agent_id}/sessions")
 async def sessions(agent_id: str, limit: int = Query(default=50, le=500)):
     return {"sessions": store().list_sessions(agent_id, limit)}
@@ -182,6 +201,15 @@ async def explorations(agent_id: str, limit: int = Query(default=50, le=500)):
 @app.get("/api/agents/{agent_id}/sources")
 async def sources(agent_id: str):
     return {"sources": store().list_sources(agent_id, False)}
+
+
+@app.get("/api/agents/{agent_id}/share-actions")
+async def share_actions(
+    agent_id: str,
+    share_id: str | None = None,
+    limit: int = Query(default=100, le=500),
+):
+    return {"actions": store().share_actions(agent_id, share_id, limit)}
 
 
 def main():

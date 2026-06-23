@@ -25,7 +25,7 @@ from innerlife.service import get_briefing, system_status
 from innerlife.session import SessionLifecycle
 from innerlife.storage import Storage
 
-server = Server("innerlife", version="2.1.0")
+server = Server("innerlife", version="2.2.0")
 
 
 def _agent(arguments: dict) -> str:
@@ -47,6 +47,31 @@ def _json(value) -> list[TextContent]:
 
 TOOLS = [
     Tool(
+        name="innerlife_share_check",
+        description="在对话进行中提交当前上下文，让 InnerLife 决定是否自然带入一条待分享内容。每次最多返回一条。",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "session_id": {"type": "string"},
+                "conversation_context": {"type": "object"},
+            },
+            "required": ["session_id", "conversation_context"],
+        },
+    ),
+    Tool(
+        name="innerlife_share_actions",
+        description="查看待分享内容的评估、呈现、延后和最终处理记录。",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "share_id": {"type": "string"},
+                "limit": {"type": "integer", "default": 100},
+            },
+        },
+    ),
+    Tool(
         name="innerlife_explore",
         description="手动触发一次 Agent 自主经历探索。正常由后台调度；排查或明确要求时使用。",
         inputSchema={
@@ -67,7 +92,7 @@ TOOLS = [
     ),
     Tool(
         name="innerlife_session_start",
-        description="开始一次正式会话并返回进入时的内部状态。每个宿主会话开始时调用一次；相同 external_session_id 重复调用不会重复创建。",
+        description="开始正式会话，返回内部状态和本次 share_plan。share_plan 选中时可自然开启一次话题；相同 external_session_id 不会重复创建或重复选择。",
         inputSchema={
             "type": "object",
             "properties": {
@@ -176,7 +201,7 @@ TOOLS = [
     ),
     Tool(
         name="innerlife_mark_share",
-        description="将待分享念头标记为已使用、延后或放弃。",
+        description="回报待分享念头的结果：used 已表达，deferred 本次没说并继续等待，discarded 不再值得说。",
         inputSchema={
             "type": "object",
             "properties": {
@@ -221,7 +246,19 @@ async def call_tool(name: str, arguments: dict):
     storage = Storage(settings.db_path)
     storage.init_db()
     try:
-        if name == "innerlife_explore":
+        if name == "innerlife_share_check":
+            result = SessionLifecycle(storage, settings).check_shares(
+                session_id=arguments["session_id"],
+                agent_id=_agent(arguments),
+                conversation_context=arguments["conversation_context"],
+            )
+        elif name == "innerlife_share_actions":
+            result = storage.share_actions(
+                _agent(arguments),
+                arguments.get("share_id"),
+                int(arguments.get("limit", 100)),
+            )
+        elif name == "innerlife_explore":
             result = AutonomousExperienceEngine(storage, settings).explore(
                 _agent(arguments)
             )

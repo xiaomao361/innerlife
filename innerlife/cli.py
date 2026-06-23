@@ -119,6 +119,18 @@ def build_parser() -> argparse.ArgumentParser:
     mark.add_argument("--reason")
     _add_json_flag(mark)
 
+    share_check = sub.add_parser("share-check")
+    share_check.add_argument("--agent", required=True)
+    share_check.add_argument("--session-id", required=True)
+    share_check.add_argument("--context-file", required=True)
+    _add_json_flag(share_check)
+
+    share_actions = sub.add_parser("share-actions")
+    share_actions.add_argument("--agent", required=True)
+    share_actions.add_argument("--share-id")
+    share_actions.add_argument("--limit", type=int, default=100)
+    _add_json_flag(share_actions)
+
     daemon = sub.add_parser("daemon")
     daemon.add_argument("--once", action="store_true")
     _add_json_flag(daemon)
@@ -244,6 +256,19 @@ def execute(args: argparse.Namespace, settings: Settings) -> Any:
         return storage.update_share_status(
             args.share_id, args.agent, args.status, args.reason
         )
+    if args.command == "share-check":
+        return SessionLifecycle(storage, settings).check_shares(
+            session_id=args.session_id,
+            agent_id=args.agent,
+            conversation_context=_read_object(args.context_file),
+        )
+    if args.command == "share-actions":
+        return {
+            "agent_id": args.agent,
+            "actions": storage.share_actions(
+                args.agent, args.share_id, args.limit
+            ),
+        }
     if args.command == "daemon":
         result = InnerLifeDaemon(settings).process_once() if args.once else None
         if args.once:

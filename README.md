@@ -1,4 +1,4 @@
-# InnerLife v2.1
+# InnerLife v2.2
 
 InnerLife 是 AI agent 的内部生活系统。
 
@@ -31,6 +31,9 @@ InnerLife：Agent 自己正在关注、怀疑和改变什么
 - 自主经历：没有用户输入时，Agent 可以按自己的关注选择真实公开材料。
 - 每次自主经历保存来源、读取时间和文本证据，不用模型虚构"生活"。
 - Agent 可以认为没有值得看的内容，也可以读完后判断没有形成变化。
+- 分享调度：待分享念头会在会话开始或对话相关时重新判断，而不是永久躺在 briefing。
+- 支持自然带入、主动开启话题、继续等待和放弃；每次最多选一条。
+- 主动开场受每日上限和冷却时间限制，不会变成定时消息机器人。
 
 数据默认保存在：
 
@@ -213,6 +216,8 @@ MCP 工具列表：
 - `innerlife_explore` — 手动触发自主探索
 - `innerlife_experiences` — 查看已形成的自主经历
 - `innerlife_pending_shares` — 读取待分享念头
+- `innerlife_share_check` — 结合当前对话判断是否出现自然分享时机
+- `innerlife_share_actions` — 查看评估、呈现、延后和处理记录
 - `innerlife_mark_share` — 标记已使用、延后或放弃
 - `innerlife_history` — 查看内部变化历史
 - `innerlife_status` — 查看系统状态
@@ -221,8 +226,14 @@ MCP 工具列表：
 
 ```text
 对话开始
-→ innerlife_briefing
-→ 将状态作为 Agent 自己的内在背景，不机械播报
+→ innerlife_session_start
+→ 如果 share_plan 选中 proactive 内容，可自然开启一次话题
+
+对话进行中
+→ 话题形成后可调用 innerlife_share_check
+→ 如果选中 natural 内容，可自然带入
+→ 表达后用 innerlife_mark_share 回报 used
+→ 没说则回报 deferred，内容继续等待
 
 对话结束
 → innerlife_session_end
@@ -270,6 +281,16 @@ python -m innerlife.cli digest --agent my-agent --mode light --json
 # 查看历史和待分享内容
 python -m innerlife.cli history --agent my-agent --json
 python -m innerlife.cli pending --agent my-agent --json
+
+# 结合当前对话重新判断分享时机
+python -m innerlife.cli share-check \
+  --agent my-agent \
+  --session-id session_xxx \
+  --context-file conversation-context.json \
+  --json
+
+# 查看分享判断和处理记录
+python -m innerlife.cli share-actions --agent my-agent --json
 
 # 手动运行一次自主探索
 python -m innerlife.cli explore --agent my-agent --json
@@ -319,6 +340,23 @@ INNERLIFE_DB_PATH=/tmp/innerlife-smoke/innerlife.db \
 Agent profile 中通过 `autonomous_sources` 配置订阅的 RSS / 网页来源。每个 agent 可以订阅不同来源。默认示例 profile 预置了哲学与 AI 新闻来源，可自由调整。
 
 详细设计见 [docs/AUTONOMOUS_EXPERIENCE_V2.md](docs/AUTONOMOUS_EXPERIENCE_V2.md)。
+
+## 分享调度
+
+`pending_share` 不再只是被动放进 briefing。
+
+- `when_relevant`：当前对话相关时，经二次判断后自然带入。
+- `on_user_asks`：用户明确询问时才考虑。
+- `proactive_allowed`：等待成熟后，可以在新会话主动开启一次话题。
+- `never_push`：只保留内部记录。
+
+`session_start` 会返回 `share_plan`。对话过程中，宿主可以带当前上下文调用
+`share_check`。系统每次最多选择一条，宿主表达后必须回报 `used`、
+`deferred` 或 `discarded`。
+
+v2.2 不做会话外通知，也不会在用户没有打开会话时主动联系用户。
+
+详细设计见 [docs/SHARE_SCHEDULER_V2_2.md](docs/SHARE_SCHEDULER_V2_2.md)。
 
 ## 当前边界
 

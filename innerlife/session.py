@@ -7,6 +7,7 @@ from .config import PROJECT_ROOT, Settings
 from .digest import DigestEngine, make_backend
 from .models import ValidationError
 from .service import get_briefing
+from .sharing import ShareScheduler
 from .storage import Storage
 
 
@@ -69,7 +70,23 @@ class SessionLifecycle:
             raise ValidationError(
                 f"user_id {user_id!r} is not allowed by agent {agent_id!r}"
             )
+        if external_session_id:
+            existing = self.storage.find_session_by_external(
+                agent_id, host, external_session_id
+            )
+            if existing:
+                return {
+                    "session": existing,
+                    "briefing": existing["start_briefing"],
+                    "instruction": (
+                        "这是已存在的会话，继续使用首次返回的 briefing 和 share_plan。"
+                    ),
+                }
         briefing = get_briefing(self.storage, agent_id)
+        share_plan = ShareScheduler(
+            self.storage, self.settings, self.backend
+        ).check(agent_id=agent_id, user_id=user_id)
+        briefing["share_plan"] = share_plan
         session = self.storage.start_session(
             agent_id=agent_id,
             user_id=user_id,
@@ -82,9 +99,29 @@ class SessionLifecycle:
             "briefing": session["start_briefing"],
             "instruction": (
                 "把 briefing 作为 Agent 的内在背景，不机械播报。"
+                "share_plan 选中内容时可按建议意图自然表达，并回报结果；"
                 "会话结束时把实际对话内容交回 session-end。"
             ),
         }
+
+    def check_shares(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        conversation_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        session = self.storage.get_session(session_id, agent_id)
+        if session["status"] != "active":
+            raise ValidationError("share check requires an active session")
+        return ShareScheduler(
+            self.storage, self.settings, self.backend
+        ).check(
+            agent_id=agent_id,
+            user_id=session["user_id"],
+            session_id=session_id,
+            conversation_context=conversation_context,
+        )
 
     def end(
         self,

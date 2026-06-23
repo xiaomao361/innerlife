@@ -36,7 +36,8 @@ def get_briefing(storage: Storage, agent_id: str, event_limit: int = 8) -> dict[
         ],
         "guidance": (
             "这些是 Agent 的内部状态，不是必须播报的通知。"
-            "当前对话相关时可以自然带入；不相关时保持不说。"
+            "待分享内容必须经过 share_plan 或 share_check 的二次判断；"
+            "宿主表达后应回报 used、deferred 或 discarded。"
         ),
         "revision": agent["revision"],
         "updated_at": agent["updated_at"],

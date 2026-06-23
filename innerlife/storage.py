@@ -77,8 +77,33 @@ CREATE TABLE IF NOT EXISTS pending_shares (
   source_refs_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
   expires_at TEXT,
+  decision_status TEXT NOT NULL DEFAULT 'waiting',
+  decision_reason TEXT,
+  defer_count INTEGER NOT NULL DEFAULT 0,
+  surface_count INTEGER NOT NULL DEFAULT 0,
+  last_evaluated_at TEXT,
+  last_surfaced_at TEXT,
+  last_outcome TEXT,
+  updated_at TEXT,
   FOREIGN KEY(agent_id) REFERENCES agent_profiles(agent_id)
 );
+
+CREATE TABLE IF NOT EXISTS share_actions (
+  id TEXT PRIMARY KEY,
+  share_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  session_id TEXT,
+  action TEXT NOT NULL,
+  delivery_style TEXT,
+  reason TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(share_id) REFERENCES pending_shares(id),
+  FOREIGN KEY(agent_id) REFERENCES agent_profiles(agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_share_actions_agent_time
+ON share_actions(agent_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS digest_runs (
   id TEXT PRIMARY KEY,
@@ -213,6 +238,25 @@ class Storage:
     def init_db(self) -> dict[str, Any]:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(pending_shares)").fetchall()
+            }
+            migrations = {
+                "decision_status": "TEXT NOT NULL DEFAULT 'waiting'",
+                "decision_reason": "TEXT",
+                "defer_count": "INTEGER NOT NULL DEFAULT 0",
+                "surface_count": "INTEGER NOT NULL DEFAULT 0",
+                "last_evaluated_at": "TEXT",
+                "last_surfaced_at": "TEXT",
+                "last_outcome": "TEXT",
+                "updated_at": "TEXT",
+            }
+            for name, definition in migrations.items():
+                if name not in columns:
+                    conn.execute(
+                        f"ALTER TABLE pending_shares ADD COLUMN {name} {definition}"
+                    )
         return {"db_path": str(self.db_path), "initialized": True}
 
     def create_agent(self, profile: dict[str, Any]) -> dict[str, Any]:
@@ -490,6 +534,14 @@ class Storage:
                 "source_refs": load(row["source_refs_json"]),
                 "created_at": row["created_at"],
                 "expires_at": row["expires_at"],
+                "decision_status": row["decision_status"],
+                "decision_reason": row["decision_reason"],
+                "defer_count": row["defer_count"],
+                "surface_count": row["surface_count"],
+                "last_evaluated_at": row["last_evaluated_at"],
+                "last_surfaced_at": row["last_surfaced_at"],
+                "last_outcome": row["last_outcome"],
+                "updated_at": row["updated_at"],
             }
             for row in rows
         ]
@@ -549,6 +601,7 @@ class Storage:
                 "source_subscriptions",
                 "exploration_runs",
                 "autonomous_experiences",
+                "share_actions",
             ]
             counts = {
                 table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -576,15 +629,202 @@ class Storage:
             if row is None:
                 raise NotFoundError(f"Unknown pending share: {share_id}")
             stored_reason = reason or row["reason"]
+            now = utc_now()
+            persisted_status = "pending" if status == "deferred" else status
+            decision_status = "waiting" if status == "deferred" else "closed"
             conn.execute(
-                "UPDATE pending_shares SET status = ?, reason = ? WHERE id = ?",
-                (status, stored_reason, share_id),
+                """
+                UPDATE pending_shares
+                SET status=?, reason=?, decision_status=?, decision_reason=?,
+                    defer_count=defer_count + ?, last_outcome=?, updated_at=?
+                WHERE id=? AND agent_id=?
+                """,
+                (
+                    persisted_status,
+                    stored_reason,
+                    decision_status,
+                    reason,
+                    int(status == "deferred"),
+                    status,
+                    now,
+                    share_id,
+                    agent_id,
+                ),
             )
+            conn.execute(
+                """
+                INSERT INTO share_actions(
+                  id, share_id, agent_id, action, reason, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, '{}', ?)
+                """,
+                (new_id("share_action"), share_id, agent_id, status, reason, now),
+            )
+        return self.get_share(share_id, agent_id)
+
+    def get_share(self, share_id: str, agent_id: str) -> dict[str, Any]:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM pending_shares WHERE id=? AND agent_id=?",
+                (share_id, agent_id),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError(f"Unknown pending share: {share_id}")
         result = dict(row)
-        result["status"] = status
-        result["reason"] = stored_reason
         result["source_refs"] = load(result.pop("source_refs_json"))
         return result
+
+    def evaluate_share(
+        self,
+        *,
+        share_id: str,
+        agent_id: str,
+        decision: str,
+        reason: str,
+        session_id: str | None = None,
+        delivery_style: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if decision not in {"share_now", "wait", "discard"}:
+            raise ValidationError("share decision must be share_now, wait or discard")
+        now = utc_now()
+        with self.transaction() as conn:
+            self._agent_exists(conn, agent_id)
+            row = conn.execute(
+                "SELECT * FROM pending_shares WHERE id=? AND agent_id=?",
+                (share_id, agent_id),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError(f"Unknown pending share: {share_id}")
+            if row["status"] != "pending":
+                raise ValidationError(f"Share is no longer pending: {share_id}")
+            if decision == "discard":
+                conn.execute(
+                    """
+                    UPDATE pending_shares
+                    SET status='discarded', decision_status='closed',
+                        decision_reason=?, last_evaluated_at=?,
+                        last_outcome='discarded', updated_at=?
+                    WHERE id=?
+                    """,
+                    (reason, now, now, share_id),
+                )
+            elif decision == "share_now":
+                conn.execute(
+                    """
+                    UPDATE pending_shares
+                    SET decision_status='surfaced', decision_reason=?,
+                        surface_count=surface_count + 1,
+                        last_evaluated_at=?, last_surfaced_at=?,
+                        last_outcome='surfaced', updated_at=?
+                    WHERE id=?
+                    """,
+                    (reason, now, now, now, share_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE pending_shares
+                    SET decision_status='waiting', decision_reason=?,
+                        last_evaluated_at=?, last_outcome='wait', updated_at=?
+                    WHERE id=?
+                    """,
+                    (reason, now, now, share_id),
+                )
+            conn.execute(
+                """
+                INSERT INTO share_actions(
+                  id, share_id, agent_id, session_id, action, delivery_style,
+                  reason, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_id("share_action"),
+                    share_id,
+                    agent_id,
+                    session_id,
+                    decision,
+                    delivery_style,
+                    reason,
+                    dump(metadata or {}),
+                    now,
+                ),
+            )
+        return self.get_share(share_id, agent_id)
+
+    def share_actions(
+        self, agent_id: str, share_id: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            self._agent_exists(conn, agent_id)
+            if share_id:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM share_actions
+                    WHERE agent_id=? AND share_id=?
+                    ORDER BY created_at DESC LIMIT ?
+                    """,
+                    (agent_id, share_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM share_actions
+                    WHERE agent_id=? ORDER BY created_at DESC LIMIT ?
+                    """,
+                    (agent_id, limit),
+                ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = load(item.pop("metadata_json"))
+            results.append(item)
+        return results
+
+    def proactive_share_count_since(self, agent_id: str, since: str) -> int:
+        with self.connect() as conn:
+            return int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM share_actions
+                    WHERE agent_id=? AND action='share_now'
+                      AND delivery_style='proactive' AND created_at>=?
+                    """,
+                    (agent_id, since),
+                ).fetchone()[0]
+            )
+
+    def expire_pending_shares(self, agent_id: str, now: str | None = None) -> int:
+        now = now or utc_now()
+        with self.transaction() as conn:
+            rows = conn.execute(
+                """
+                SELECT id FROM pending_shares
+                WHERE agent_id=? AND status='pending'
+                  AND expires_at IS NOT NULL AND expires_at<=?
+                """,
+                (agent_id, now),
+            ).fetchall()
+            for row in rows:
+                conn.execute(
+                    """
+                    UPDATE pending_shares
+                    SET status='discarded', decision_status='closed',
+                        decision_reason='expired', last_outcome='discarded',
+                        updated_at=?
+                    WHERE id=?
+                    """,
+                    (now, row["id"]),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO share_actions(
+                      id, share_id, agent_id, action, reason,
+                      metadata_json, created_at
+                    ) VALUES (?, ?, ?, 'discarded', 'expired', '{}', ?)
+                    """,
+                    (new_id("share_action"), row["id"], agent_id, now),
+                )
+        return len(rows)
 
     def get_service_state(self, key: str, default: Any = None) -> Any:
         with self.connect() as conn:
@@ -660,6 +900,19 @@ class Storage:
                 ),
             )
         return self.get_session(session_id, agent_id)
+
+    def find_session_by_external(
+        self, agent_id: str, host: str, external_session_id: str
+    ) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM sessions
+                WHERE agent_id=? AND host=? AND external_session_id=?
+                """,
+                (agent_id, host, external_session_id),
+            ).fetchone()
+        return self._session_row(row) if row else None
 
     @staticmethod
     def _session_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -1030,8 +1283,8 @@ class Storage:
                     INSERT INTO pending_shares(
                       id, agent_id, user_id, content, reason, share_mode,
                       urgency, relevance, novelty, status, source_refs_json,
-                      created_at, expires_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+                      created_at, expires_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
                     """,
                     (
                         share["id"],
@@ -1046,6 +1299,7 @@ class Storage:
                         dump(share["source_refs"]),
                         now,
                         share.get("expires_at"),
+                        now,
                     ),
                 )
 

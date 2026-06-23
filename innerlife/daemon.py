@@ -76,6 +76,7 @@ class InnerLifeDaemon:
         errors: list[dict[str, str]] = []
         for agent in self.storage.list_agents():
             agent_id = agent["agent_id"]
+            self.storage.expire_pending_shares(agent_id)
             retry = self.storage.get_service_state(
                 f"daemon.retry.{agent_id}", {"failures": 0, "retry_after": None}
             )

@@ -75,9 +75,10 @@
         list($("interests"), b.current_interests);
         list($("loops"), b.open_loops, x => x.content);
         $("shares").innerHTML = b.pending_shares.length ? b.pending_shares.map(s =>
-          `<div class="event"><div>${s.content}</div><div class="muted">${s.share_mode}</div>
+          `<div class="event"><div>${s.content}</div><div class="muted">${s.share_mode} · ${s.decision_status} · 延后 ${s.defer_count}</div>
           <button onclick="markShare('${s.id}','used')">已使用</button>
-          <button onclick="markShare('${s.id}','deferred')">延后</button></div>`
+          <button onclick="markShare('${s.id}','deferred')">延后</button>
+          <button onclick="markShare('${s.id}','discarded')">放弃</button></div>`
         ).join("") : '<div class="empty">暂无</div>';
         $("events").innerHTML = b.recent_internal_events.length ? b.recent_internal_events.map(e =>
           `<div class="event"><span class="tag">${e.event_type}</span>${e.content}
