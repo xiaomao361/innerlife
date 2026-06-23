@@ -7,11 +7,10 @@ import os
 import sys
 from pathlib import Path
 
+# 文件名为 mcp_server.py，不与官方 mcp 包同名，可直接 import。
+# 只需把项目根加入 sys.path，让 `import innerlife.*` 可被解析。
 SERVER_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SERVER_DIR.parent
-sys.path = [
-    path for path in sys.path if path and Path(path).resolve() != SERVER_DIR
-]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from mcp.server import Server

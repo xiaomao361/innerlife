@@ -26,4 +26,4 @@ if [[ -z "$PYTHON" ]]; then
   PYTHON="$(command -v python3)"
 fi
 cd "$PROJECT"
-exec "$PYTHON" "$PROJECT/server/mcp.py"
+exec "$PYTHON" "$PROJECT/server/mcp_server.py"

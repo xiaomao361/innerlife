@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SERVER = ROOT / "server" / "mcp.py"
+SERVER = ROOT / "server" / "mcp_server.py"
 
 
 class Client:
