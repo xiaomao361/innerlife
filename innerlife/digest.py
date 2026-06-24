@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re as _re
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,7 @@ class DigestEngine:
         agent = self.storage.get_agent(agent_id)
         pending = self.storage.pending_events(agent_id)
         recent = self.storage.recent_internal_events(agent_id)
+        recent_experiences = self.storage.list_autonomous_experiences(agent_id, limit=20)
         input_refs = [item["id"] for item in pending]
         run_id = new_id("digest")
         payload = {
@@ -79,10 +81,21 @@ class DigestEngine:
                 item["id"] for item in recent if isinstance(item.get("id"), str)
             )
             allowed_refs.update(
+                item["id"]
+                for item in recent_experiences
+                if isinstance(item.get("id"), str)
+            )
+            allowed_refs.update(
                 str(loop["id"])
                 for loop in agent["state"].get("open_loops", [])
                 if isinstance(loop, dict) and loop.get("id")
             )
+            # Allow truncated memoria-style refs (LLM often writes "memoria_lara_abc12345"
+            # — first 8 chars of UUID — instead of the full inbox event ID)
+            for ref in input_refs:
+                m = _re.match(r"(memoria_\w+)_([0-9a-f]{8})", ref)
+                if m:
+                    allowed_refs.add(f"{m.group(1)}_{m.group(2)}")
             normalized, state_after = evaluate_output(
                 raw_output=raw_output,
                 agent_id=agent_id,

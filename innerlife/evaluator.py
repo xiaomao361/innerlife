@@ -79,12 +79,20 @@ def _validate_refs(refs: Any, allowed_refs: set[str], field: str) -> list[str]:
     for value in values:
         ref = _text(value, field)
         if ref not in allowed_refs:
-            raise ValidationError(f"{field} contains unavailable source ref: {ref}")
+            # Allow memoria-prefixed refs (real system entries, may predate current batch)
+            if not (ref.startswith("memoria_") and _is_likely_uuid_ref(ref)):
+                raise ValidationError(f"{field} contains unavailable source ref: {ref}")
         if ref not in normalized:
             normalized.append(ref)
     if not normalized:
         raise ValidationError(f"{field} must contain at least one source ref")
     return normalized
+
+
+def _is_likely_uuid_ref(ref: str) -> bool:
+    """Check if ref looks like a valid memoria-style ID: memoria_agent_uuid"""
+    import re
+    return bool(re.match(r"^memoria_\w+_[0-9a-f]{8}", ref))
 
 
 def _score(value: Any, field: str) -> float:

@@ -127,3 +127,20 @@ v2.2 不会在用户没有打开会话时主动联系用户。
 10. 每次评估和结果都有记录。
 11. 不支持会话外通知。
 12. 旧数据库无需手工迁移。
+
+## 10. v2.3 已知问题与修复（2026-06-24）
+
+### Digest prompt 过于保守
+
+原 prompt: "不要求产生待分享内容。pending_shares 可以为空。" → LLM 几乎从不产出 share。
+
+修复：改为鼓励产出 + 交给 ShareScheduler 二次判断。分享门槛从"重大发现"降到"用户可能感兴趣"。
+
+### source_refs 校验过严
+
+LLM 引用 memoria / autonomous_experience ID 时，evaluator 的 `allowed_refs` 只包含当前 inbox batch 的 ID，导致已验证的系统条目也被拦截。
+
+修复：
+- `evaluator.py`: memoria-prefixed refs 放宽校验（匹配 `memoria_agent_uuid` 模式即放行）
+- `digest.py`: allowed_refs 加入 `autonomous_experiences` 的 ID
+- `digest.py`: LLM 截断 UUID（如 `memoria_lara_abc12345`）自动匹配完整 inbox ID
