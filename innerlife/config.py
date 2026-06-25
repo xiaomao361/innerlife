@@ -121,7 +121,7 @@ class Settings:
             feishu_app_secret=os.environ.get("INNERLIFE_FEISHU_APP_SECRET", ""),
             feishu_receive_id=os.environ.get(
                 "INNERLIFE_FEISHU_RECEIVE_ID",
-                "oc_73a719bd1c52d1e6041c750583b6c83a",
+                "oc_06dc170473b988553a5b759c7329988e",
             ),
         )
 
