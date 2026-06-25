@@ -12,6 +12,7 @@ from .autonomous import AutonomousExperienceEngine
 from .convergence import ConvergenceEngine
 from .digest import DigestEngine, make_backend
 from .integrations import sync_continuity, sync_memoria
+from .sharing import ShareScheduler
 from .storage import Storage, utc_now
 
 
@@ -46,6 +47,7 @@ class InnerLifeDaemon:
         self.convergence = ConvergenceEngine(
             self.storage, settings, self.backend
         )
+        self.shares = ShareScheduler(self.storage, settings, self.backend)
         self.stop_event = Event()
 
     def stop(self, *_: Any) -> None:
@@ -76,6 +78,7 @@ class InnerLifeDaemon:
     def process_once(self) -> dict[str, Any]:
         sync_results = self.sync_sources()
         processed: list[dict[str, Any]] = []
+        deliveries: list[dict[str, Any]] = []
         explorations: list[dict[str, Any]] = []
         convergences: list[dict[str, Any]] = []
         errors: list[dict[str, str]] = []
@@ -128,6 +131,18 @@ class InnerLifeDaemon:
                         "retry_after": retry_time,
                         "last_error": str(exc),
                     },
+                )
+        for agent in self.storage.list_agents():
+            agent_id = agent["agent_id"]
+            try:
+                queued = self.shares.evaluate_delivery(agent_id)
+                if queued:
+                    deliveries.append(
+                        {"agent_id": agent_id, "queued": len(queued)}
+                    )
+            except Exception as exc:
+                errors.append(
+                    {"agent_id": agent_id, "stage": "delivery", "error": str(exc)}
                 )
         if self.settings.autonomy_enabled:
             day_start = datetime.now(timezone.utc).replace(
@@ -186,6 +201,7 @@ class InnerLifeDaemon:
             },
             "sync": sync_results,
             "processed": len(processed),
+            "deliveries": len(deliveries),
             "explorations": len(explorations),
             "convergences": len(convergences),
             "errors": errors,
@@ -194,6 +210,7 @@ class InnerLifeDaemon:
         return {
             "heartbeat": heartbeat,
             "results": processed,
+            "deliveries": deliveries,
             "explorations": explorations,
             "convergences": convergences,
         }

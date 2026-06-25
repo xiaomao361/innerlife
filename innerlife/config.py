@@ -46,6 +46,9 @@ class Settings:
     memoria_sync_agents: tuple[str, ...]
     continuity_sync_agents: tuple[str, ...]
     autonomy_enabled: bool
+    feishu_app_id: str
+    feishu_app_secret: str
+    feishu_receive_id: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -114,6 +117,12 @@ class Settings:
                 "INNERLIFE_AUTONOMY_ENABLED", "true"
             ).lower()
             in {"1", "true", "yes", "on"},
+            feishu_app_id=os.environ.get("INNERLIFE_FEISHU_APP_ID", ""),
+            feishu_app_secret=os.environ.get("INNERLIFE_FEISHU_APP_SECRET", ""),
+            feishu_receive_id=os.environ.get(
+                "INNERLIFE_FEISHU_RECEIVE_ID",
+                "oc_73a719bd1c52d1e6041c750583b6c83a",
+            ),
         )
 
     def model_for(self, mode: str) -> str:

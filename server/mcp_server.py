@@ -254,6 +254,30 @@ TOOLS = [
         description="查看 InnerLife 服务、Agent、排队内容和后台心跳状态。",
         inputSchema={"type": "object", "properties": {}},
     ),
+    Tool(
+        name="innerlife_delivery_queue",
+        description="查看 Agent 等待外部推送的待分享内容（如飞书）。",
+        inputSchema={
+            "type": "object",
+            "properties": {"agent_id": {"type": "string"}},
+        },
+    ),
+    Tool(
+        name="innerlife_mark_delivered",
+        description="标记一条待分享内容已通过外部渠道推送成功。delivery_status 可选 'delivered'、'failed' 或 'queued'（重新排队）。",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "share_id": {"type": "string"},
+                "delivery_status": {
+                    "type": "string",
+                    "enum": ["delivered", "failed", "queued"],
+                },
+            },
+            "required": ["share_id", "delivery_status"],
+        },
+    ),
 ]
 
 
@@ -368,6 +392,14 @@ async def call_tool(name: str, arguments: dict):
             )
         elif name == "innerlife_status":
             result = system_status(storage, settings)
+        elif name == "innerlife_delivery_queue":
+            result = storage.delivery_queue(_agent(arguments))
+        elif name == "innerlife_mark_delivered":
+            result = storage.mark_delivery(
+                arguments["share_id"],
+                _agent(arguments),
+                arguments["delivery_status"],
+            )
         else:
             result = {"error": f"unknown tool: {name}"}
         return _json(result)

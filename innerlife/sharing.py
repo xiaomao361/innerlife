@@ -237,3 +237,41 @@ class ShareScheduler:
             "delivery_style": delivery_style,
             "suggested_opening": opening,
         }
+
+    def evaluate_delivery(self, agent_id: str) -> list[dict[str, Any]]:
+        """Evaluate pending shares for proactive delivery (daemon-side, no model).
+
+        Shares with share_mode='proactive_allowed' and urgency above the agent's
+        push threshold are queued for external delivery (e.g. Feishu).
+        Skips shares that are already queued or delivered.
+        Only runs when the agent has no active sessions.
+        """
+        now = _now()
+        agent = self.storage.get_agent(agent_id)
+        policy = agent["profile"].get("share_policy") or {}
+        push_threshold = float(policy.get("push_urgency_threshold", 0.6))
+        cooldown_hours = float(policy.get("delivery_cooldown_hours", 6))
+
+        active_sessions = self.storage.active_session_count(agent_id)
+        if active_sessions:
+            return []
+
+        queued: list[dict[str, Any]] = []
+        for share in self.storage.pending_shares(agent_id):
+            if share["share_mode"] != "proactive_allowed":
+                continue
+            if share["delivery_status"] in {"queued", "delivered"}:
+                continue
+            if share["urgency"] < push_threshold:
+                continue
+            last_delivered_hours = _hours_since(
+                share.get("updated_at"), now
+            ) if share.get("delivery_status") == "delivered" else float("inf")
+            if last_delivered_hours < cooldown_hours:
+                continue
+            try:
+                updated = self.storage.queue_delivery(share["id"], agent_id)
+                queued.append(updated)
+            except Exception:
+                continue
+        return queued

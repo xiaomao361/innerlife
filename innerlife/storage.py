@@ -285,6 +285,7 @@ class Storage:
                 "last_surfaced_at": "TEXT",
                 "last_outcome": "TEXT",
                 "updated_at": "TEXT",
+                "delivery_status": "TEXT",
             }
             for name, definition in migrations.items():
                 if name not in columns:
@@ -604,6 +605,7 @@ class Storage:
                 "last_surfaced_at": row["last_surfaced_at"],
                 "last_outcome": row["last_outcome"],
                 "updated_at": row["updated_at"],
+                "delivery_status": row["delivery_status"],
             }
             for row in rows
         ]
@@ -635,6 +637,113 @@ class Storage:
             }
             for row in rows
         ]
+
+    def delivery_queue(self, agent_id: str) -> list[dict[str, Any]]:
+        """List pending shares queued for external delivery (e.g. Feishu)."""
+        with self.connect() as conn:
+            self._agent_exists(conn, agent_id)
+            rows = conn.execute(
+                """
+                SELECT * FROM pending_shares
+                WHERE agent_id = ? AND status = 'pending'
+                  AND delivery_status = 'queued'
+                ORDER BY created_at ASC, id ASC
+                """,
+                (agent_id,),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "agent_id": row["agent_id"],
+                "user_id": row["user_id"],
+                "content": row["content"],
+                "reason": row["reason"],
+                "share_mode": row["share_mode"],
+                "urgency": row["urgency"],
+                "relevance": row["relevance"],
+                "novelty": row["novelty"],
+                "status": row["status"],
+                "source_refs": load(row["source_refs_json"]),
+                "created_at": row["created_at"],
+                "expires_at": row["expires_at"],
+                "decision_status": row["decision_status"],
+                "decision_reason": row["decision_reason"],
+                "defer_count": row["defer_count"],
+                "surface_count": row["surface_count"],
+                "last_evaluated_at": row["last_evaluated_at"],
+                "last_surfaced_at": row["last_surfaced_at"],
+                "last_outcome": row["last_outcome"],
+                "updated_at": row["updated_at"],
+                "delivery_status": row["delivery_status"],
+            }
+            for row in rows
+        ]
+
+    def mark_delivery(self, share_id: str, agent_id: str, status: str) -> dict[str, Any]:
+        """Mark a share as delivered or reset its delivery status."""
+        if status not in {"delivered", "queued", "failed"}:
+            raise ValidationError(
+                "delivery status must be delivered, queued or failed"
+            )
+        now = utc_now()
+        with self.transaction() as conn:
+            self._agent_exists(conn, agent_id)
+            row = conn.execute(
+                "SELECT * FROM pending_shares WHERE id = ? AND agent_id = ?",
+                (share_id, agent_id),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError(f"Unknown pending share: {share_id}")
+            conn.execute(
+                """
+                UPDATE pending_shares
+                SET delivery_status = ?, updated_at = ?
+                WHERE id = ? AND agent_id = ?
+                """,
+                (status, now, share_id, agent_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO share_actions(
+                  id, share_id, agent_id, action, reason,
+                  metadata_json, created_at
+                ) VALUES (?, ?, ?, 'delivery', ?, ?, ?)
+                """,
+                (
+                    new_id("share_action"),
+                    share_id,
+                    agent_id,
+                    "delivered" if status == "delivered" else status,
+                    dump({"delivery_status": status}),
+                    now,
+                ),
+            )
+        return self.get_share(share_id, agent_id)
+
+    def queue_delivery(self, share_id: str, agent_id: str) -> dict[str, Any]:
+        """Mark a pending share for external delivery."""
+        with self.transaction() as conn:
+            self._agent_exists(conn, agent_id)
+            row = conn.execute(
+                "SELECT * FROM pending_shares WHERE id = ? AND agent_id = ?",
+                (share_id, agent_id),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError(f"Unknown pending share: {share_id}")
+            if row["delivery_status"] == "delivered":
+                raise ValidationError(f"Share already delivered: {share_id}")
+            if row["status"] != "pending":
+                raise ValidationError(f"Share is no longer pending: {share_id}")
+            now = utc_now()
+            conn.execute(
+                """
+                UPDATE pending_shares
+                SET delivery_status = 'queued', updated_at = ?
+                WHERE id = ? AND agent_id = ?
+                """,
+                (now, share_id, agent_id),
+            )
+        return self.get_share(share_id, agent_id)
 
     def list_agents(self) -> list[dict[str, Any]]:
         with self.connect() as conn:

@@ -44,7 +44,7 @@
       "user_id": "目标用户",
       "content": "不是内部事件原文复制的、可能自然分享的念头",
       "reason": "为什么可能值得分享",
-      "share_mode": "when_relevant | on_user_asks | proactive_allowed | never_push",
+      "share_mode": "when_relevant | on_user_asks | proactive_allowed | never_push。proactive_allowed 用于适合在用户无上下文时主动推送的念头（如提醒、关心的询问），when_relevant 用于需要对话自然带出的念头",
       "urgency": 0.0,
       "relevance": 0.0,
       "novelty": 0.0,
