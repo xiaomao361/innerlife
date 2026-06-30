@@ -11,6 +11,40 @@ from .sharing import ShareScheduler
 from .storage import Storage
 
 
+def _slim_briefing(briefing: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact briefing for session_start responses.
+
+    Drops pending_shares (use innerlife_pending_shares) and
+    recent_autonomous_experiences (use innerlife_experiences) to keep the
+    response under token limits. open_loops and recent_internal_events are
+    kept because they are load-bearing for cross-session continuity checks.
+    """
+    return {
+        "agent_id": briefing.get("agent_id"),
+        "display_name": briefing.get("display_name"),
+        "current_interests": briefing.get("current_interests", []),
+        "open_loops": briefing.get("open_loops", []),
+        "recent_mood": briefing.get("recent_mood"),
+        "recent_focus": briefing.get("recent_focus"),
+        "recent_internal_events": briefing.get("recent_internal_events", []),
+        "stable_summaries": briefing.get("stable_summaries", []),
+        "active_context_counts": briefing.get("active_context_counts", {}),
+        "share_plan": briefing.get("share_plan"),
+        "guidance": briefing.get("guidance", ""),
+        "revision": briefing.get("revision"),
+        "updated_at": briefing.get("updated_at"),
+    }
+
+
+def _slim_session(session: dict[str, Any]) -> dict[str, Any]:
+    """Strip start_briefing from the session dict returned to the Agent.
+
+    start_briefing is stored in the DB and re-read by session_end; there is
+    no need to send it over the wire twice.
+    """
+    return {k: v for k, v in session.items() if k != "start_briefing"}
+
+
 def _reflection_prompt() -> str:
     return (PROJECT_ROOT / "prompts" / "session_reflection.md").read_text(
         encoding="utf-8"
@@ -76,8 +110,8 @@ class SessionLifecycle:
             )
             if existing:
                 return {
-                    "session": existing,
-                    "briefing": existing["start_briefing"],
+                    "session": _slim_session(existing),
+                    "briefing": _slim_briefing(existing["start_briefing"]),
                     "instruction": (
                         "这是已存在的会话，继续使用首次返回的 briefing 和 share_plan。"
                     ),
@@ -95,12 +129,13 @@ class SessionLifecycle:
             external_session_id=external_session_id,
         )
         return {
-            "session": session,
-            "briefing": session["start_briefing"],
+            "session": _slim_session(session),
+            "briefing": _slim_briefing(session["start_briefing"]),
             "instruction": (
                 "把 briefing 作为 Agent 的内在背景，不机械播报。"
                 "share_plan 选中内容时可按建议意图自然表达，并回报结果；"
                 "会话结束时把实际对话内容交回 session-end。"
+                "需要完整内部状态时调用 innerlife_briefing。"
             ),
         }
 
